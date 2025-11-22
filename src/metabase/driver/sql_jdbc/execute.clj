@@ -12,6 +12,7 @@
    [clojure.string :as str]
    [java-time.api :as t]
    [medley.core :as m]
+   [metabase.api.common :as api]
    [metabase.driver :as driver]
    [metabase.driver-api.core :as driver-api]
    [metabase.driver.connection :as driver.conn]
@@ -20,6 +21,7 @@
    [metabase.driver.sql-jdbc.execute.diagnostic :as sql-jdbc.execute.diagnostic]
    [metabase.driver.sql-jdbc.execute.old-impl :as sql-jdbc.execute.old]
    [metabase.driver.sql-jdbc.sync.interface :as sql-jdbc.sync.interface]
+   [metabase.driver.util :as driver.u]
    [metabase.lib.schema.info :as lib.schema.info]
    [metabase.premium-features.core :refer [defenterprise]]
    [metabase.tracing.core :as tracing]
@@ -244,9 +246,18 @@
           (log/errorf e "Failed to set timezone '%s' for %s database" timezone-id driver))))))
 
 (defenterprise set-role-if-supported!
-  "OSS no-op implementation of `set-role-if-supported!`."
+  "Attempt to set a database role on the given connection if the driver supports connection-impersonation
+  and the current user has a `db_role` login attribute."
   metabase-enterprise.impersonation.driver
-  [_driver _conn _database])
+  [driver ^Connection conn database]
+  (try
+    (let [attrs (api/current-user-attributes)
+          role  (or (get attrs "db_role") (get attrs :db_role))]
+      (when (and role (driver.u/supports? driver :connection-impersonation database))
+        (driver/set-role! driver conn role)))
+    (catch Throwable e
+      (log/debug e "Error setting role on connection (OSS fallback)")
+      nil)))
 
 ;; TODO - since we're not running the queries in a transaction, does this make any difference at all? (metabase#40012)
 (defn set-best-transaction-level!

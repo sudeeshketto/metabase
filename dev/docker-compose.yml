@@ -58,9 +58,17 @@ services:
       MB_POSTGRESQL_TEST_PASSWORD: password
       MB_POSTGRESQL_TEST_PORT: 5432
       MB_POSTGRESQL_TEST_USER: user
-    command: ["clojure", "-M:run:dev:drivers:drivers-dev:ee:ee-dev:socket"]
+    # command: ["clojure", "-M:run:dev:drivers:drivers-dev:ee:ee-dev:socket"]
+    command: >
+      bash -c "set -eux;
+             apt-get update && apt-get install -y --no-install-recommends ca-certificates git curl && update-ca-certificates || true;
+             git config --system http.version HTTP/1.1 || true;
+             clojure -M:run:dev:drivers:drivers-dev:ee:ee-dev:socket"
     profiles:
       - dev-app
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     networks:
       - metabasenet
 
@@ -124,6 +132,24 @@ services:
       MYSQL_DATABASE: metabase
     profiles:
       - mysql57appdb
+    networks:
+      - metabasenet
+
+  metabase-mysql-8-app-db:
+    image: mysql:8
+    container_name: metabase-mysql8-app-db
+    restart: always
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_USER: mbuser
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: metabase
+    profiles:
+      - mysql8appdb
+    volumes:
+      - ./mysql-init:/docker-entrypoint-initdb.d:ro
     networks:
       - metabasenet
 
