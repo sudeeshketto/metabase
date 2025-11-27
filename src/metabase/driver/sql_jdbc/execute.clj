@@ -13,6 +13,8 @@
    [java-time.api :as t]
    [medley.core :as m]
    [metabase.driver :as driver]
+  [metabase.api.common :as api]
+  [metabase.driver.util :as driver.u]
    [metabase.driver-api.core :as driver-api]
    [metabase.driver.settings :as driver.settings]
    [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
@@ -232,10 +234,23 @@
         (catch Throwable e
           (log/errorf e "Failed to set timezone '%s' for %s database" timezone-id driver))))))
 
-(defenterprise set-role-if-supported!
-  "OSS no-op implementation of `set-role-if-supported!`."
-  metabase-enterprise.impersonation.driver
-  [_ _ _])
+(defn set-role-if-supported!
+  "Attempt to set a database role on the given connection if the driver supports connection-impersonation
+  and the current user has an attribute named `db_role` (for example in `login_attributes`).
+
+  This provides a lightweight OSS-friendly fallback so that drivers which implement `driver/set-role!`
+  (and `driver.sql/set-role-statement`) such as Redshift can impersonate based on a user's
+  `db_role` attribute without requiring the EE impersonation policies.
+  "
+  [driver ^Connection conn database]
+  (try
+    (let [attrs (api/current-user-attributes)
+          role  (or (get attrs "db_role") (get attrs :db_role))]
+      (when (and role (driver.u/supports? driver :connection-impersonation database))
+        (driver/set-role! driver conn role)))
+    (catch Throwable e
+      (log/debug e "Error setting role on connection (OSS fallback)")
+      nil)))
 
 ;; TODO - since we're not running the queries in a transaction, does this make any difference at all? (metabase#40012)
 (defn set-best-transaction-level!
