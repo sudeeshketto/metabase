@@ -12,15 +12,16 @@
    [clojure.string :as str]
    [java-time.api :as t]
    [medley.core :as m]
+   [metabase.api.common :as api]
    [metabase.driver :as driver]
-  [metabase.api.common :as api]
-  [metabase.driver.util :as driver.u]
    [metabase.driver-api.core :as driver-api]
    [metabase.driver.settings :as driver.settings]
+   [metabase.driver.sql :as driver.sql]
    [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
    [metabase.driver.sql-jdbc.execute.diagnostic :as sql-jdbc.execute.diagnostic]
    [metabase.driver.sql-jdbc.execute.old-impl :as sql-jdbc.execute.old]
    [metabase.driver.sql-jdbc.sync.interface :as sql-jdbc.sync.interface]
+   [metabase.driver.util :as driver.u]
    [metabase.lib.schema.info :as lib.schema.info]
    [metabase.premium-features.core :refer [defenterprise]]
    [metabase.util :as u]
@@ -241,13 +242,22 @@
   This provides a lightweight OSS-friendly fallback so that drivers which implement `driver/set-role!`
   (and `driver.sql/set-role-statement`) such as Redshift can impersonate based on a user's
   `db_role` attribute without requiring the EE impersonation policies.
+
+  If the user does not have a `db_role` attribute, we reset to the default role to ensure connections
+  are properly reset when reused from the connection pool.
   "
   [driver ^Connection conn database]
   (try
-    (let [attrs (api/current-user-attributes)
-          role  (or (get attrs "db_role") (get attrs :db_role))]
-      (when (and role (driver.u/supports? driver :connection-impersonation database))
-        (driver/set-role! driver conn role)))
+    (when (driver.u/supports? driver :connection-impersonation database)
+      (let [attrs (api/current-user-attributes)
+            role  (or (get attrs "db_role") (get attrs :db_role))
+            default-role (driver.sql/default-database-role driver database)]
+        (if role
+          ;; User has a db_role attribute, use it
+          (driver/set-role! driver conn role)
+          ;; User doesn't have db_role, reset to default role to ensure connection is clean
+          (when default-role
+            (driver/set-role! driver conn default-role)))))
     (catch Throwable e
       (log/debug e "Error setting role on connection (OSS fallback)")
       nil)))
