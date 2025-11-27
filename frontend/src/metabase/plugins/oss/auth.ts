@@ -2,6 +2,7 @@ import {
   NotFoundPlaceholder,
   PluginPlaceholder,
 } from "metabase/plugins/components/PluginPlaceholder";
+import FormLoginAttributes from "metabase/admin/people/components/FormLoginAttributes/FormLoginAttributes";
 import type { User } from "metabase-types/api";
 
 import type { GetAuthProviders } from "../types";
@@ -39,7 +40,7 @@ const getDefaultPluginIsPasswordUser = (): ((user: User) => boolean)[] => [];
 export const PLUGIN_IS_PASSWORD_USER = getDefaultPluginIsPasswordUser();
 
 const getDefaultPluginAdminUserFormFields = () => ({
-  FormLoginAttributes: PluginPlaceholder,
+  FormLoginAttributes: FormLoginAttributes,
 });
 
 export const PLUGIN_ADMIN_USER_FORM_FIELDS =
