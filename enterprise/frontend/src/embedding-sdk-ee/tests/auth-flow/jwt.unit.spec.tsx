@@ -29,10 +29,25 @@ const setup = ({
   locale,
 }: Pick<MetabaseProviderProps, "authConfig" | "locale">) => {
   setupMockJwtEndpoints();
+
+  const getFirstSsoDiscoveryCall = () => {
+    // This is `/auth/sso` or `auth/sso?preferred_method=...`
+    // that returns the method (jwt/saml) and the url of the sso provider
+    // `auth/sso?jwt=...` is the second call and should be excluded from this
+    return fetchMock.callHistory
+      .calls()
+      .filter(
+        (call) =>
+          new URL(call.url).pathname === "/auth/sso" &&
+          !new URL(call.url).searchParams.has("jwt"),
+      );
+  };
+
   return {
     ...baseSetup({ authConfig, locale }),
     getLastAuthProviderApiCall: () =>
       fetchMock.callHistory.lastCall(`${MOCK_JWT_PROVIDER_URI}?response=json`),
+    getFirstSsoDiscoveryCall,
   };
 };
 
@@ -46,7 +61,7 @@ describe("Auth Flow - JWT", () => {
       metabaseInstanceUrl: MOCK_INSTANCE_URL,
     });
 
-    const { rerender } = setup({ authConfig });
+    const { rerender, getFirstSsoDiscoveryCall } = setup({ authConfig });
 
     await waitForLoaderToBeRemoved();
     expect(
@@ -64,6 +79,8 @@ describe("Auth Flow - JWT", () => {
     expect(
       fetchMock.callHistory.calls(`${MOCK_JWT_PROVIDER_URI}?response=json`),
     ).toHaveLength(1);
+
+    expect(getFirstSsoDiscoveryCall()).toHaveLength(1);
 
     const loader = screen.queryByTestId("loading-indicator");
     expect(loader).not.toBeInTheDocument();
@@ -104,6 +121,21 @@ describe("Auth Flow - JWT", () => {
     );
   });
 
+  it("should skip the initial /auth/sso request when jwtProviderUri is provided", async () => {
+    const authConfig = defineMetabaseAuthConfig({
+      metabaseInstanceUrl: MOCK_INSTANCE_URL,
+      jwtProviderUri: MOCK_JWT_PROVIDER_URI,
+    });
+
+    const { getLastAuthProviderApiCall, getFirstSsoDiscoveryCall } = setup({
+      authConfig,
+    });
+
+    await waitForRequest(() => getLastAuthProviderApiCall());
+
+    expect(getFirstSsoDiscoveryCall()).toHaveLength(0);
+  });
+
   it("should use `fetchRequestToken` if provided", async () => {
     const customFetchFunction = jest.fn().mockImplementation(() => ({
       jwt: MOCK_VALID_JWT_RESPONSE,
@@ -115,13 +147,19 @@ describe("Auth Flow - JWT", () => {
       fetchRequestToken: customFetchFunction,
     });
 
-    const { getLastCardQueryApiCall, getLastUserApiCall } = setup({
+    const {
+      getLastCardQueryApiCall,
+      getLastUserApiCall,
+      getFirstSsoDiscoveryCall,
+    } = setup({
       authConfig,
     });
 
     await waitForRequest(() => getLastUserApiCall());
 
     expect(customFetchFunction).toHaveBeenCalled();
+
+    expect(getFirstSsoDiscoveryCall()).toHaveLength(1);
 
     expect(getLastUserApiCall()?.options.headers).toHaveProperty(
       "x-metabase-session",
@@ -212,5 +250,54 @@ describe("Auth Flow - JWT", () => {
     expect(
       fetchMock.callHistory.calls(`begin:${instanceUrlWithSubpath}/auth/sso`),
     ).toHaveLength(2);
+  });
+
+  it("should support relative URLs for jwtProviderUri", async () => {
+    const relativeJwtProviderUri = "/api/sso";
+
+    setupCurrentUserEndpoint(createMockUser());
+    setupPropertiesEndpoints(createMockSettings());
+
+    // Mock the relative JWT provider endpoint (will be resolved to window.location.origin)
+    fetchMock.get(
+      `${window.location.origin}${relativeJwtProviderUri}?response=json`,
+      {
+        status: 200,
+        body: { jwt: MOCK_VALID_JWT_RESPONSE },
+      },
+    );
+
+    // Mock the Metabase SSO validation endpoint
+    fetchMock.get(
+      `${MOCK_INSTANCE_URL}/auth/sso?jwt=${MOCK_VALID_JWT_RESPONSE}`,
+      {
+        status: 200,
+        body: {
+          id: MOCK_SESSION_TOKEN_ID,
+          exp: 1965805007,
+          iat: 1609459200,
+        },
+      },
+    );
+
+    const authConfig = defineMetabaseAuthConfig({
+      metabaseInstanceUrl: MOCK_INSTANCE_URL,
+      jwtProviderUri: relativeJwtProviderUri,
+    });
+
+    renderWithProviders(
+      <ComponentProvider authConfig={authConfig}>
+        <StaticQuestion questionId={1} />
+      </ComponentProvider>,
+    );
+
+    await waitForLoaderToBeRemoved();
+
+    // Verify the relative URL was correctly resolved and called
+    expect(
+      fetchMock.callHistory.calls(
+        `${window.location.origin}${relativeJwtProviderUri}?response=json`,
+      ),
+    ).toHaveLength(1);
   });
 });

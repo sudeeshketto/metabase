@@ -1,25 +1,24 @@
 import type { LocationDescriptor } from "history";
-import type * as React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { replace } from "react-router-redux";
 import { useMount } from "react-use";
 import _ from "underscore";
 
 import { NotFound } from "metabase/common/components/ErrorPages";
-import Actions from "metabase/entities/actions";
-import Databases from "metabase/entities/databases";
-import Questions from "metabase/entities/questions";
-import Tables from "metabase/entities/tables";
+import { Actions } from "metabase/entities/actions";
+import { Databases } from "metabase/entities/databases";
+import { Questions } from "metabase/entities/questions";
+import { Tables } from "metabase/entities/tables";
 import { usePageTitle } from "metabase/hooks/use-page-title";
-import { connect } from "metabase/lib/redux";
-import * as Urls from "metabase/lib/urls";
 import ModelActionsView from "metabase/models/components/ModelActions";
 import { loadMetadataForCard } from "metabase/questions/actions";
+import { connect } from "metabase/redux";
+import type { State } from "metabase/redux/store";
+import * as Urls from "metabase/urls";
 import * as Lib from "metabase-lib";
 import type Question from "metabase-lib/v1/Question";
 import type Table from "metabase-lib/v1/metadata/Table";
 import type { Card, WritebackAction } from "metabase-types/api";
-import type { State } from "metabase-types/store";
 
 type OwnProps = {
   params: {
@@ -85,7 +84,7 @@ function ModelActions({
         loadMetadataForCard(card);
       }
     } else {
-      onChangeLocation(Urls.question(card));
+      onChangeLocation(Urls.card(card));
     }
   });
 

@@ -1,33 +1,30 @@
 import { useFormikContext } from "formik";
-import { type JSX, useEffect, useMemo } from "react";
+import type { JSX } from "react";
 import { match } from "ts-pattern";
 
 import type {
   DatabaseFormConfig,
   FormLocation,
 } from "metabase/databases/types";
-import { getVisibleFields } from "metabase/databases/utils/schema";
 import { Box } from "metabase/ui";
 import type { DatabaseData, Engine, EngineKey } from "metabase-types/api";
 
 import { DatabaseConnectionStringField } from "../DatabaseConnectionUri";
-import { DatabaseDetailField } from "../DatabaseDetailField";
 import { DatabaseEngineField } from "../DatabaseEngineField";
 import DatabaseEngineWarning from "../DatabaseEngineWarning";
 import { DatabaseFormError } from "../DatabaseFormError";
 import { DatabaseNameField } from "../DatabaseNameField";
 
+import { DatabaseFormBodyDetails } from "./DatabaseFormBodyDetails";
 import { useHasConnectionError } from "./utils";
 
 interface DatabaseFormBodyProps {
   engine: Engine | undefined;
   engineKey: EngineKey | undefined;
   engines: Record<string, Engine>;
-  engineFieldState?: "default" | "hidden" | "disabled";
   autofocusFieldName?: string;
   isAdvanced: boolean;
   onEngineChange: (engineKey: string | undefined) => void;
-  setIsDirty?: (isDirty: boolean) => void;
   config: DatabaseFormConfig;
   showSampleDatabase?: boolean;
   location: FormLocation;
@@ -37,25 +34,16 @@ export const DatabaseFormBody = ({
   engine,
   engineKey,
   engines,
-  engineFieldState = "default",
   autofocusFieldName,
   isAdvanced,
   onEngineChange,
-  setIsDirty,
   config,
   showSampleDatabase = false,
   location,
 }: DatabaseFormBodyProps): JSX.Element => {
-  const { values, dirty, setValues } = useFormikContext<DatabaseData>();
+  const { setValues } = useFormikContext<DatabaseData>();
   const hasConnectionError = useHasConnectionError();
-
-  useEffect(() => {
-    setIsDirty?.(dirty);
-  }, [dirty, setIsDirty]);
-
-  const fields = useMemo(() => {
-    return engine ? getVisibleFields(engine, values, isAdvanced) : [];
-  }, [engine, values, isAdvanced]);
+  const { engine: engineFieldConfig, name: nameFieldConfig } = config;
 
   const px = match(location)
     .with("setup", () => "sm")
@@ -66,15 +54,15 @@ export const DatabaseFormBody = ({
   const mah = location === "full-page" ? "100%" : "calc(100vh - 20rem)";
 
   return (
-    <Box mah={mah} mb="md" px={px} style={{ overflowY: "auto" }}>
-      {engineFieldState !== "hidden" && (
+    <Box mah={mah} mb="md" px={px} flex={1} style={{ overflowY: "auto" }}>
+      {engineFieldConfig?.fieldState !== "hidden" && (
         <>
           <DatabaseEngineField
             engineKey={engineKey}
             engines={engines}
             isAdvanced={isAdvanced}
             onChange={onEngineChange}
-            disabled={engineFieldState === "disabled"}
+            disabled={engineFieldConfig?.fieldState === "disabled"}
             showSampleDatabase={showSampleDatabase}
           />
           <DatabaseEngineWarning
@@ -89,23 +77,20 @@ export const DatabaseFormBody = ({
         location={location}
         setValues={setValues}
       />
-      {engine && (
+      {engine && nameFieldConfig?.fieldState !== "hidden" && (
         <DatabaseNameField
           engine={engine}
           config={config}
           autoFocus={autofocusFieldName === "name"}
         />
       )}
-      {fields.map((field) => (
-        <DatabaseDetailField
-          key={field.name}
-          field={field}
-          autoFocus={autofocusFieldName === field.name}
-          data-kek={field.name}
-          engineKey={engineKey}
-          engine={engine}
-        />
-      ))}
+      <DatabaseFormBodyDetails
+        fields={engine?.["details-fields"] ?? []}
+        autofocusFieldName={autofocusFieldName}
+        engineKey={engineKey}
+        engine={engine}
+        isAdvanced={isAdvanced}
+      />
       {isAdvanced && hasConnectionError && <DatabaseFormError />}
     </Box>
   );

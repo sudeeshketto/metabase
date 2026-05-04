@@ -2,7 +2,7 @@
   "Middleware that stores metadata about results column types after running a query for a Card,
    and returns that metadata (which can be passed *back* to the backend when saving a Card) as well
    as a checksum in the API response."
-  (:refer-clojure :exclude [mapv select-keys])
+  (:refer-clojure :exclude [mapv select-keys get-in])
   (:require
    [clojure.string :as str]
    [malli.error :as me]
@@ -19,7 +19,7 @@
    [metabase.util.log :as log]
    [metabase.util.malli :as mu]
    [metabase.util.malli.registry :as mr]
-   [metabase.util.performance :refer [mapv select-keys]]
+   [metabase.util.performance :refer [mapv select-keys get-in]]
    ^{:clj-kondo/ignore [:discouraged-namespace]}
    [toucan2.core :as t2]))
 
@@ -27,7 +27,7 @@
 ;;; |                                                   Middleware                                                   |
 ;;; +----------------------------------------------------------------------------------------------------------------+
 
-(mu/defn- comparable-metadata :- [:sequential :map]
+(mu/defn- comparable-metadata
   "Smooth out any unimportant differences in metadata so we can do an easy equality check."
   [metadata :- [:maybe [:sequential ::lib.schema.metadata/lib-or-legacy-column]]]
   (letfn [(remove-underscore-nil-keys
@@ -69,6 +69,11 @@
                  driver/*driver*
                  ;; pivot queries can run multiple queries, only record metadata for the main query
                  (not= actual-metadata :none)
+                 ;; Don't persist result_metadata for parameterized queries with non-default values.
+                 ;; MBQL queries with any parameters are skipped because filters change fingerprints.
+                 ;; Native queries are only skipped when parameter values differ from template tag defaults.
+                 ;; See QUE2-502 for details.
+                 (not (:qp/skip-result-metadata-persistence query))
                  (driver.u/supports? driver/*driver* :nested-queries (lib.metadata/database query))
                  card-id
                  ;; don't want to update metadata when we use a Card as a source Card.

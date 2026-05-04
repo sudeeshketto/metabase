@@ -3,37 +3,51 @@ name: Embedding SDK Component Tests
 on:
   workflow_call:
 
+env:
+  DISPLAY: "" # https://github.com/cypress-io/cypress/issues/4034
+  TERM: xterm
+  TZ: US/Pacific # to make Node match the instance tz
+  MB_EDITION: "ee"
+
 jobs:
   sdk-component-tests:
     name: "SDK component tests (React ${{ matrix.react-version }})"
-    runs-on: ubuntu-22.04
+    runs-on: ${{ vars.DEFAULT_RUNNER_KEY }}
     timeout-minutes: 45
     strategy:
       matrix:
         react-version: [18, 19]
       fail-fast: false
     env:
-      MB_EDITION: ee
-      DISPLAY: ""
-      MB_RUN_MODE: "e2e"
-      METASTORE_DEV_SERVER_URL: ${{ secrets.METASTORE_DEV_SERVER_URL }}
-      # Any env starting with `CYPRESS_` will be available to all Cypress tests via `Cypress.env()`
-      # Example: you can get `CYPRESS_FOO` with `Cypress.env("FOO")`
+      # Sensitive env vars (tokens, secrets) starting with `CYPRESS_` are accessed via async `cy.env()`
+      # Example: `cy.env(["FOO"]).then(({ FOO }) => ...)`
+      # For non-sensitive config, use `Cypress.expose()` in cypress config instead (synchronous)
       CYPRESS_MB_ALL_FEATURES_TOKEN: ${{ secrets.STAGING_MB_ALL_FEATURES_TOKEN }}
       CYPRESS_MB_STARTER_CLOUD_TOKEN: ${{ secrets.STAGING_MB_STARTER_CLOUD_TOKEN }}
       CYPRESS_MB_PRO_CLOUD_TOKEN: ${{ secrets.STAGING_MB_PRO_CLOUD_TOKEN }}
       CYPRESS_MB_PRO_SELF_HOSTED_TOKEN: ${{ secrets.STAGING_MB_PRO_SELF_HOSTED_TOKEN }}
-      COMMIT_INFO_MESSAGE: ${{ github.event.pull_request.title || github.event.head_commit.message || github.event.head.sha }}
-      TZ: US/Pacific # to make node match the instance tz
-      CYPRESS_CI: true
 
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare Docker containers
+        uses: ./.github/actions/e2e-prepare-containers
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          maildev: true
+          openldap: false
+          webhook: false
+          snowplow: false
+          postgres: false
+          mysql: false
+          mongo: false
+
       - name: Retrieve uberjar artifact for ee
         uses: ./.github/actions/fetch-artifact
         with:
-          name: metabase-ee-${{ github.event.pull_request.head.sha || github.sha }}-uberjar
+          commit: ${{ github.event.pull_request.head.sha || github.sha }}
+          edition: ee
           extract-path: "target/uberjar"
           output-name: "metabase.jar"
 
@@ -45,12 +59,8 @@ jobs:
 
       - name: Prepare front-end environment
         uses: ./.github/actions/prepare-frontend
-
-      - name: Prepare JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: 21
-          distribution: "temurin"
+      - name: Prepare back-end environment
+        uses: ./.github/actions/prepare-backend
 
       - name: Prepare Cypress environment
         id: cypress-prep
@@ -62,13 +72,17 @@ jobs:
       - name: Make app db snapshot
         env:
           CYPRESS_BROWSER: ${{ steps.cypress-prep.outputs.chrome-path }}
-        run: node e2e/runner/run_cypress_ci.js snapshot
+        # Component tests only need the default snapshot
+        run: |
+          node e2e/runner/run_cypress_ci.js snapshot \
+            --spec "e2e/snapshot-creators/default.cy.snap.js"
 
       # Has to be run after the app db snapshot is made, as it is not compatible with React 19
       - name: Change React version to ${{ matrix.react-version }}
         run: ./bin/embedding-sdk/change-react-version.bash ${{ matrix.react-version }}
 
       - name: Run component tests for Embedding SDK
+        id: run-tests
         env:
           CYPRESS_BROWSER: ${{ steps.cypress-prep.outputs.chrome-path }}
         run: node e2e/runner/run_cypress_ci.js component
@@ -80,10 +94,10 @@ jobs:
           input-path: ./target/junit
           output-name: e2e-embedding-sdk-react-${{ matrix.react-version }}
           bucket: ${{ vars.AWS_S3_TEST_RESULTS_BUCKET }}
-          aws-access-key-id: ${{ secrets.AWS_TEST_RESULTS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_TEST_RESULTS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.CI_TEST_RESULTS_IAM_ROLE }}
           aws-region: ${{ vars.AWS_REGION }}
           trunk-api-token: ${{ secrets.TRUNK_API_TOKEN }}
+          previous-step-outcome: ${{ steps.run-tests.outcome }}
 
       - name: "SDK component tests > Upload Cypress Artifacts upon failure"
         uses: actions/upload-artifact@v4
@@ -113,7 +127,7 @@ jobs:
              await core.summary.addRaw(summary).write();
 
   decide-target-ref:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.DEFAULT_RUNNER_KEY }}
     outputs:
       target-ref: ${{ steps.get-target-ref.outputs.value }}
     steps:
@@ -136,28 +150,37 @@ jobs:
   sdk-component-tests-backward-compatibility:
     name: "SDK component tests (Backward compatibility)"
     needs: [decide-target-ref]
-    runs-on: ubuntu-22.04
+    runs-on: ${{ vars.DEFAULT_RUNNER_KEY }}
     timeout-minutes: 45
     env:
-      MB_EDITION: ee
-      DISPLAY: ""
       MB_RUN_MODE: "e2e"
       METASTORE_DEV_SERVER_URL: ${{ secrets.METASTORE_DEV_SERVER_URL }}
-      # Any env starting with `CYPRESS_` will be available to all Cypress tests via `Cypress.env()`
-      # Example: you can get `CYPRESS_FOO` with `Cypress.env("FOO")`
+      # Sensitive env vars (tokens, secrets) starting with `CYPRESS_` are accessed via async `cy.env()`
+      # Example: `cy.env(["FOO"]).then(({ FOO }) => ...)`
+      # For non-sensitive config, use `Cypress.expose()` in cypress config instead (synchronous)
       CYPRESS_MB_ALL_FEATURES_TOKEN: ${{ secrets.STAGING_MB_ALL_FEATURES_TOKEN }}
       CYPRESS_MB_STARTER_CLOUD_TOKEN: ${{ secrets.STAGING_MB_STARTER_CLOUD_TOKEN }}
       CYPRESS_MB_PRO_CLOUD_TOKEN: ${{ secrets.STAGING_MB_PRO_CLOUD_TOKEN }}
       CYPRESS_MB_PRO_SELF_HOSTED_TOKEN: ${{ secrets.STAGING_MB_PRO_SELF_HOSTED_TOKEN }}
-      COMMIT_INFO_MESSAGE: ${{ github.event.pull_request.title || github.event.head_commit.message || github.event.head.sha }}
-      TZ: US/Pacific # to make node match the instance tz
-      CYPRESS_CI: true
 
     steps:
       - name: Check out the code from the previous commit
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.decide-target-ref.outputs.target-ref }}
+
+      - name: Prepare Docker containers
+        uses: ./.github/actions/e2e-prepare-containers
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          maildev: true
+          openldap: false
+          webhook: false
+          snowplow: false
+          postgres: false
+          mysql: false
+          mongo: false
 
       - name: Get the actual commit SHA from the checked out branch
         id: get-commit-sha
@@ -168,12 +191,15 @@ jobs:
 
       - name: Prepare front-end environment
         uses: ./.github/actions/prepare-frontend
+      - name: Prepare back-end environment
+        uses: ./.github/actions/prepare-backend
 
       - name: Attempt to retrieve the ee uberjar artifact from the previous commit
         id: download-uberjar
         uses: ./.github/actions/fetch-artifact
         with:
-          name: metabase-ee-${{ steps.get-commit-sha.outputs.sha }}-uberjar
+          commit: ${{ steps.get-commit-sha.outputs.sha }}
+          edition: ee
           extract-path: "target/uberjar"
           output-name: "metabase.jar"
         continue-on-error: true # do not break the whole job if this step doesn't succeed
@@ -201,9 +227,13 @@ jobs:
       - name: Make app db snapshot
         env:
           CYPRESS_BROWSER: ${{ steps.cypress-prep.outputs.chrome-path }}
-        run: node e2e/runner/run_cypress_ci.js snapshot
+        # Component tests only need the default snapshot
+        run: |
+          node e2e/runner/run_cypress_ci.js snapshot \
+            --spec "e2e/snapshot-creators/default.cy.snap.js"
 
       - name: Run component tests for Embedding SDK
+        id: run-tests
         env:
           CYPRESS_BROWSER: ${{ steps.cypress-prep.outputs.chrome-path }}
         run: |
@@ -217,10 +247,10 @@ jobs:
           input-path: ./target/junit
           output-name: e2e-embedding-sdk
           bucket: ${{ vars.AWS_S3_TEST_RESULTS_BUCKET }}
-          aws-access-key-id: ${{ secrets.AWS_TEST_RESULTS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_TEST_RESULTS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.CI_TEST_RESULTS_IAM_ROLE }}
           aws-region: ${{ vars.AWS_REGION }}
           trunk-api-token: ${{ secrets.TRUNK_API_TOKEN }}
+          previous-step-outcome: ${{ steps.run-tests.outcome }}
 
       - name: Upload Cypress Artifacts upon failure
         uses: actions/upload-artifact@v4

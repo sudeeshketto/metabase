@@ -1,11 +1,4 @@
-import { enableJwtAuth } from "e2e/support/helpers/e2e-jwt-helpers";
-
-import {
-  codeBlock,
-  getEmbedSidebar,
-  navigateToEmbedOptionsStep,
-  navigateToGetCodeStep,
-} from "./helpers";
+import { navigateToEmbedOptionsStep } from "./helpers";
 
 const { H } = cy;
 
@@ -15,7 +8,7 @@ describe("scenarios > embedding > sdk iframe embed setup > user settings persist
   beforeEach(() => {
     H.restore();
     cy.signInAsAdmin();
-    H.activateToken("bleeding-edge");
+    H.activateToken("pro-self-hosted");
     H.updateSetting("enable-embedding-simple", true);
 
     cy.intercept("PUT", "/api/setting/sdk-iframe-embed-setup-settings").as(
@@ -28,6 +21,9 @@ describe("scenarios > embedding > sdk iframe embed setup > user settings persist
       experience: "dashboard",
       resourceName: DASHBOARD_NAME,
     });
+
+    cy.log("0. select custom colors");
+    cy.findByTestId("theme-card-Custom").click();
 
     cy.log("1. change brand color to red");
     cy.findByTestId("brand-color-picker").findByRole("button").click();
@@ -45,6 +41,9 @@ describe("scenarios > embedding > sdk iframe embed setup > user settings persist
       .first()
       .should("have.css", "color", "rgb(255, 0, 0)");
 
+    // Wait for debounce
+    cy.wait(800);
+
     cy.log("2. reload the page");
     cy.wait("@persistSettings");
 
@@ -58,39 +57,5 @@ describe("scenarios > embedding > sdk iframe embed setup > user settings persist
       .findAllByTestId("cell-data")
       .first()
       .should("have.css", "color", "rgb(255, 0, 0)");
-  });
-
-  it("persists sso auth method", () => {
-    enableJwtAuth();
-    navigateToGetCodeStep({
-      experience: "dashboard",
-      resourceName: DASHBOARD_NAME,
-    });
-
-    cy.log("1. select sso auth method");
-    getEmbedSidebar().within(() => {
-      cy.log("single sign on should not be checked by default");
-      cy.findByLabelText("Single sign-on (SSO)")
-        .should("not.be.checked")
-        .click()
-        .should("be.checked");
-
-      codeBlock().should("not.contain", "useExistingUserSession");
-    });
-
-    cy.log("2. reload the page");
-    cy.wait("@persistSettings");
-
-    cy.log("3. auth method should persist");
-    navigateToGetCodeStep({
-      experience: "dashboard",
-      resourceName: DASHBOARD_NAME,
-    });
-
-    getEmbedSidebar().within(() => {
-      cy.findByLabelText("Existing Metabase session").should("not.be.checked");
-      cy.findByLabelText("Single sign-on (SSO)").should("be.checked");
-      codeBlock().should("not.contain", "useExistingUserSession");
-    });
   });
 });

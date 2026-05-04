@@ -4,9 +4,18 @@ import type {
   ExplorationEmbedOptions,
   MetabotEmbedOptions,
   QuestionEmbedOptions,
+  SdkIframeEmbedAuthTypeSettings,
   SdkIframeEmbedBaseSettings,
 } from "metabase/embedding/embedding-iframe-sdk/types/embed";
+import type { MetabaseTheme } from "metabase/embedding-sdk/theme";
 import type { BaseRecentItem } from "metabase-types/api";
+
+/**
+ * Wizard-scoped theme: either an inline MetabaseTheme or a reference to a
+ * saved EmbeddingTheme via `id`. The preview resolves `id` back to an inline
+ * theme before handing it to embed.js.
+ */
+export type SdkIframeEmbedSetupTheme = MetabaseTheme & { id?: number };
 
 export type SdkIframeEmbedSetupExperience =
   | "dashboard"
@@ -31,9 +40,16 @@ export type SdkIframeEmbedSetupRecentItem = Pick<
   "name" | "description"
 > & { id: string | number };
 
-export type SdkIframeDashboardEmbedSettings = DashboardEmbedOptions;
+export type SdkIframeEmbedSetupGuestEmbedSettings =
+  SdkIframeEmbedAuthTypeSettings;
 
-export type SdkIframeQuestionEmbedSettings = QuestionEmbedOptions;
+export type SdkIframeDashboardEmbedSettings = DashboardEmbedOptions & {
+  lockedParameters?: string[];
+};
+
+export type SdkIframeQuestionEmbedSettings = QuestionEmbedOptions & {
+  lockedParameters?: string[];
+};
 
 export type SdkIframeEmbedSetupTemplateSettings =
   | SdkIframeDashboardEmbedSettings
@@ -48,6 +64,8 @@ export type SdkIframeEmbedSetupTemplateSettings =
  */
 export type SdkIframeEmbedSetupSettings = Omit<
   SdkIframeEmbedBaseSettings,
-  "instanceUrl"
-> &
+  "instanceUrl" | "theme"
+> & {
+  theme?: SdkIframeEmbedSetupTheme;
+} & Partial<SdkIframeEmbedSetupGuestEmbedSettings> &
   SdkIframeEmbedSetupTemplateSettings;

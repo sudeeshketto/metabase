@@ -43,41 +43,43 @@
   [snapshot {:keys [path-filters root-dependencies]}]
   (cond->> (ingestable/->IngestableSnapshot (cond-> snapshot
                                               (seq path-filters) (->WrappingSnapshot path-filters))
-                                            (atom nil))
+                                            (atom nil) (atom []))
     (seq root-dependencies) (ingestable/wrap-root-dep-ingestable root-dependencies)))
 
 (defn- remote-sync-path
   [opts entity]
-  (let [base-path (serdes/storage-path entity opts)
-        dirnames (drop-last base-path)
-        basename (str (last base-path) ".yaml")]
-    (str/join File/separator (map serialization/escape-segment (concat dirnames [basename])))))
+  (let [resolved (serialization/resolve-storage-path opts entity)
+        dirnames (drop-last resolved)
+        basename (str (last resolved) ".yaml")]
+    (str/join File/separator (concat dirnames [basename]))))
 
 (defn- ->file-spec
-  "Converts entity from serdes stream into file spec for source write-files! "
+  "Converts entity from serdes stream into file spec for source write-files!"
   [task-id count opts idx entity]
   (when (instance? Exception entity)
-    ;; Just short-circuit if there are errors.
     (throw entity))
   (u/prog1 {:path (remote-sync-path opts entity)
-            :content (yaml/generate-string entity {:dumper-options {:flow-style :block :split-lines false}})}
+            :content (yaml/generate-string (serialization/serialization-deep-sort entity)
+                                           {:dumper-options {:flow-style :block :split-lines false}})}
     (remote-sync.task/update-progress! task-id (-> (inc idx) (/ count) (* 0.65) (+ 0.3)))))
 
 (defn store!
   "Stores serialized entities from a stream to a remote source and commits the changes.
 
-  Takes a stream (a sequence of serialized entities to be stored), a snapshot (the remote source implementing the
-  SourceSnapshot protocol where files will be written), a task-id (the RemoteSyncTask identifier used to track progress
-  updates), and a message (the commit message to use when writing files to the source).
+  Takes a stream (a sequence of serialized entities to be stored), a snapshot (the remote source
+  implementing the SourceSnapshot protocol where files will be written), a task-id (the RemoteSyncTask
+  identifier used to track progress updates), and a message (the commit message to use when writing
+  files to the source).
 
   Returns the version written to the source.
 
   Throws Exception if any entity in the stream is an Exception instance."
   [stream snapshot task-id message]
   (let [opts (serdes/storage-base-context)
-        ;; Bound the count of the items in the stream we don't accidentally realize the entire list into memory
         stream-count (bounded-count 10000 stream)]
-    (source.p/write-files! snapshot message (map-indexed #(->file-spec task-id stream-count opts %1 %2) stream))))
+    (->> stream
+         (map-indexed #(->file-spec task-id stream-count opts %1 %2))
+         (source.p/write-files! snapshot message))))
 
 (defn source-from-settings
   "Creates a git source from the current remote sync settings.
@@ -89,6 +91,7 @@
    (git/git-source
     (setting/get :remote-sync-url)
     (or branch (setting/get :remote-sync-branch))
-    (setting/get :remote-sync-token)))
+    (setting/get :remote-sync-token)
+    serialization/legal-top-level-paths))
   ([]
    (source-from-settings (setting/get :remote-sync-branch))))

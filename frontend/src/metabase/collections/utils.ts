@@ -1,6 +1,12 @@
 import { t } from "ttag";
 
-import { PLUGIN_COLLECTIONS, PLUGIN_DATA_STUDIO } from "metabase/plugins";
+import {
+  canPlaceEntityInCollection as canPlaceEntityInCollectionImpl,
+  canPlaceEntityInCollectionOrDescendants as canPlaceEntityInCollectionOrDescendantsImpl,
+  getLibraryCollectionType,
+} from "metabase/data-studio/utils";
+import { ROOT_COLLECTION } from "metabase/entities/collections";
+import { PLUGIN_COLLECTIONS } from "metabase/plugins";
 import {
   type CardType,
   type Collection,
@@ -9,6 +15,7 @@ import {
   type CollectionItem,
   type CollectionItemModel,
   type CollectionType,
+  type User,
   isBaseEntityID,
 } from "metabase-types/api";
 
@@ -33,9 +40,29 @@ export function nonPersonalOrArchivedCollection(
 }
 
 export function isRootPersonalCollection(
-  collection: Partial<Collection> | CollectionItem,
+  collection: Pick<Collection, "personal_owner_id">,
 ): boolean {
   return typeof collection.personal_owner_id === "number";
+}
+
+export function isDedicatedTenantCollectionRoot(
+  collection: Partial<Collection> | CollectionItem,
+): boolean {
+  return collection.type === "tenant-specific-root-collection";
+}
+
+export function isDedicatedTenantCollectionOfUser({
+  user,
+  collection,
+}: {
+  user: User | null;
+  collection: Collection;
+}): boolean {
+  return (
+    user != null &&
+    user.tenant_collection_id !== null &&
+    user.tenant_collection_id === collection.id
+  );
 }
 
 export function isPersonalCollection(
@@ -53,7 +80,7 @@ export function isRootTrashCollection(
 export function isTrashedCollection(
   collection: Pick<Collection, "type" | "archived">,
 ): boolean {
-  return isRootTrashCollection(collection) || collection.archived;
+  return isRootTrashCollection(collection) || !!collection.archived;
 }
 
 export function isPublicCollection(
@@ -62,13 +89,17 @@ export function isPublicCollection(
   return !isPersonalCollection(collection);
 }
 
-export function isEditableCollection(collection: Collection) {
+export function isEditableCollection(
+  collection: Collection,
+  { currentUser }: { currentUser: User | null },
+) {
   return (
     collection.can_write &&
     !isRootCollection(collection) &&
     !isRootPersonalCollection(collection) &&
     !isTrashedCollection(collection) &&
-    !isLibraryCollection(collection)
+    !isLibraryCollection(collection) &&
+    !isDedicatedTenantCollectionOfUser({ user: currentUser, collection })
   );
 }
 
@@ -98,7 +129,7 @@ export function isSyncedCollection(collection: Partial<Collection>): boolean {
 export function isLibraryCollection(
   collection: Pick<Collection, "type">,
 ): boolean {
-  return PLUGIN_DATA_STUDIO.getLibraryCollectionType(collection.type) != null;
+  return getLibraryCollectionType(collection.type) != null;
 }
 
 export function isExamplesCollection(collection: Collection): boolean {
@@ -151,6 +182,24 @@ export function isRootCollection(collection: Pick<Collection, "id">): boolean {
   return canonicalCollectionId(collection?.id) === null;
 }
 
+export function normalizedCollection<
+  CollectionType extends Pick<Collection, "id"> = Collection,
+>(collection: CollectionType | null | undefined) {
+  return !collection || isRootCollection(collection)
+    ? ROOT_COLLECTION
+    : collection;
+}
+
+export type ItemWithCollection<CollectionType = Collection> = {
+  collection?: CollectionType;
+};
+
+export function getCollection<
+  CollectionType extends Pick<Collection, "id"> = Collection,
+>(item: ItemWithCollection<CollectionType> | null | undefined) {
+  return normalizedCollection(item?.collection);
+}
+
 export function isItemPinned(item: CollectionItem) {
   return item.collection_position != null;
 }
@@ -167,7 +216,7 @@ export function isItemMetric(item: CollectionItem) {
   return item.model === "metric";
 }
 
-export function isItemCollection(item: CollectionItem) {
+export function isItemCollection(item: Pick<CollectionItem, "model">) {
   return item.model === "collection";
 }
 
@@ -175,14 +224,23 @@ export function isReadOnlyCollection(collection: CollectionItem) {
   return isItemCollection(collection) && !collection.can_write;
 }
 
-export function canBookmarkItem(item: CollectionItem) {
-  return (
-    !isLibraryCollection(item as Pick<Collection, "type">) && !item.archived
-  );
-}
+export function canBookmarkItem({ model, type, archived }: CollectionItem) {
+  if (archived) {
+    return false;
+  }
 
-export function canPinItem(item: CollectionItem, collection?: Collection) {
-  return collection?.can_write && item.setPinned != null && !item.archived;
+  if (type === "question" || type === "model" || type === "metric") {
+    return true;
+  }
+
+  switch (model) {
+    case "table":
+      return false;
+    case "collection":
+      return !isLibraryCollection({ type });
+    default:
+      return true;
+  }
 }
 
 export function canPreviewItem(item: CollectionItem, collection?: Collection) {
@@ -194,45 +252,38 @@ export function canPreviewItem(item: CollectionItem, collection?: Collection) {
   );
 }
 
-export function canMoveItem(item: CollectionItem, collection?: Collection) {
-  return (
-    (collection?.can_write || isRootTrashCollection(collection)) &&
-    !isReadOnlyCollection(item) &&
-    item.setCollection != null &&
-    !(isItemCollection(item) && isRootPersonalCollection(item)) &&
-    !isLibraryCollection(item as Pick<Collection, "type">)
-  );
-}
-
 export function canArchiveItem(item: CollectionItem, collection?: Collection) {
   return (
     collection?.can_write &&
     !isReadOnlyCollection(item) &&
-    !(isItemCollection(item) && isRootPersonalCollection(item)) &&
+    !(
+      isItemCollection(item) &&
+      (isRootPersonalCollection(item) || isDedicatedTenantCollectionRoot(item))
+    ) &&
     !isLibraryCollection(item as Pick<Collection, "type">) &&
+    item.model !== "table" &&
     !item.archived
   );
 }
 
 export function canCopyItem(item: CollectionItem) {
-  return item.copy && !item.archived;
+  return (
+    (item.model === "dashboard" || item.model === "document") && !item.archived
+  );
 }
 
 export function canPlaceEntityInCollection(
   entityType: EntityType,
   collectionType: CollectionType | null | undefined,
 ): boolean {
-  return PLUGIN_DATA_STUDIO.canPlaceEntityInCollection(
-    entityType,
-    collectionType,
-  );
+  return canPlaceEntityInCollectionImpl(entityType, collectionType);
 }
 
 export function canPlaceEntityInCollectionOrDescendants(
   entityType: EntityType,
   collectionType: CollectionType | null | undefined,
 ): boolean {
-  return PLUGIN_DATA_STUDIO.canPlaceEntityInCollectionOrDescendants(
+  return canPlaceEntityInCollectionOrDescendantsImpl(
     entityType,
     collectionType,
   );
@@ -263,6 +314,7 @@ export function canonicalCollectionId(
 ): number | null {
   if (
     collectionId === "root" ||
+    collectionId === "tenant" ||
     collectionId === null ||
     collectionId === undefined
   ) {

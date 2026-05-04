@@ -1,5 +1,5 @@
 (ns metabase.lib.schema.parameter
-  "`:parameters` specify the *values* of parameters previously definied for a Dashboard or Card (native query template
+  "`:parameters` specify the *values* of parameters previously defined for a Dashboard or Card (native query template
   tag parameters.) See [[metabase.lib.schema.template-tag]] above for more information on the later.
 
   There are three things called 'type' in play when we talk about parameters and template tags.
@@ -21,6 +21,7 @@
   currently still allowed for backwards-compatibility purposes -- currently the FE client will just parrot back the
   `:widget-type` in some cases. In these cases, the backend is just supposed to infer the actual type of the parameter
   value."
+  (:refer-clojure :exclude [get-in])
   (:require
    #?@(:clj
        ([flatland.ordered.map :as ordered-map]))
@@ -28,7 +29,8 @@
    [metabase.lib.schema.common :as lib.schema.common]
    [metabase.util :as u]
    [metabase.util.malli :as mu]
-   [metabase.util.malli.registry :as mr]))
+   [metabase.util.malli.registry :as mr]
+   [metabase.util.performance :refer [get-in]]))
 
 (defn- variadic-opts-first
   "Some clauses, like `:contains`, have optional `options` last in their binary form, and required options first in
@@ -84,20 +86,17 @@
    ;; everything else can't be used with raw value template tags -- they can only be used with Dashboard parameters
    ;; for MBQL queries or Field filters in native queries
 
-   ;; `:id` and `:category` conceptually aren't types in a "the parameter value is of this type" sense, but they are
-   ;; widget types. They have something to do with telling the frontend to show FieldValues list/search widgets or
-   ;; something like that.
+   ;; LEGACY PARAMETER TYPES -- do not create new parameters with these types.
+   ;; Use :number/=, :string/=, :boolean/=, etc. instead.
    ;;
-   ;; Apparently the frontend might still pass in parameters with these types, in which case we're supposed to infer
-   ;; the actual type of the parameter based on the Field we're filtering on. Or something like that. Parameters with
-   ;; these types are only allowed if the widget type matches exactly, but you can also pass in something like a
-   ;; `:number/=` for a parameter with widget type `:category`.
+   ;; :id and :category are widget-types that were historically misused as parameter types.
+   ;; As parameter types they mean "infer the value type from the target field." The QP
+   ;; handles this in parse-param-value-for-type (mbql.clj).
    ;;
-   ;; TODO FIXME -- actually, it turns out the the FE client passes parameter type `:category` for parameters in
-   ;; public Cards. Who knows why! For now, we'll continue allowing it. But we should fix it soon. See
-   ;; [[metabase.public-sharing-rest.api-test/execute-public-card-with-parameters-test]]
+   ;; These remain valid for backward compatibility (dashboard/card parameters already in the app DB).
+   ;; See QUE2-326 for history.
    :id       {:allowed-for #{:id}}
-   :category {:allowed-for #{:category #_FIXME :number :text :date :boolean}}
+   :category {:allowed-for #{:category :number :text :date :boolean}}
 
    ;; Like `:id` and `:category`, the `:location/*` types are primarily widget types. They don't really have a meaning
    ;; as a parameter type, so in an ideal world they wouldn't be allowed; however it seems like the FE still passed
@@ -159,11 +158,28 @@
                                         :else                             param-type)))}]
         (keys types)))
 
+(def ^:private valid-widget-types (set (keys types)))
+
+(defn- normalize-widget-type [x]
+  (when-let [x (lib.schema.common/normalize-keyword x)]
+    (cond
+      (valid-widget-types x)
+      x
+
+      ;; for invalid namespaced types like `:category/=` return closest unnamespaced match e.g. `:category`
+      (and (qualified-keyword? x)
+           (valid-widget-types (keyword (namespace x))))
+      (keyword (namespace x))
+
+      ;; if no close match return `:none`
+      :else
+      :none)))
+
 (mr/def ::widget-type
   "The type of widget to display in the FE UI for the user to use to pick values for this parameter."
   (into [:enum
          {:error/message    "valid parameter widget type"
-          :decode/normalize lib.schema.common/normalize-keyword}
+          :decode/normalize normalize-widget-type}
          :none]
         (keys types)))
 
@@ -206,7 +222,7 @@
 
 ;;; These are all legacy-style MBQL clauses FOR NOW, obviously at some point in the future we need to
 ;;; update [[metabase.lib.convert]] to convert `:parameters` back and forth and add UUIDs and what not. But parameters
-;;; is not ported to MLv2 yet, so conversion isn't implemented YET.
+;;; is not ported to Lib yet, so conversion isn't implemented YET.
 
 (mr/def ::target.legacy-field-ref
   [:ref :metabase.legacy-mbql.schema/field])
@@ -326,8 +342,8 @@
         :number/between
         (let [[l u] (:value param)]
           (cond-> param
-            (nil? u) (assoc :type :number/>=, :value [l])
-            (nil? l) (assoc :type :number/<=, :value [u])))
+            (and l (nil? u)) (assoc :type :number/>=, :value [l])
+            (and u (nil? l)) (assoc :type :number/<=, :value [u])))
         param))))
 
 (mr/def ::id

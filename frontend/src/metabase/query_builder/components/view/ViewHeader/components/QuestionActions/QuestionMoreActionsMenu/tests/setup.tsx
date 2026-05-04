@@ -9,15 +9,20 @@ import { setupListNotificationEndpoints } from "__support__/server-mocks/notific
 import { mockSettings } from "__support__/settings";
 import { renderWithProviders, screen } from "__support__/ui";
 import { QuestionAlertListModal } from "metabase/notifications/modals";
+import { createMockState } from "metabase/redux/store/mocks";
 import Question from "metabase-lib/v1/Question";
-import type { Card, Notification, User } from "metabase-types/api";
+import type {
+  Card,
+  ModerationReview,
+  Notification,
+  User,
+} from "metabase-types/api";
 import {
   createMockCard,
   createMockSettings,
   createMockTokenFeatures,
   createMockUser,
 } from "metabase-types/api/mocks";
-import { createMockState } from "metabase-types/store/mocks";
 
 import { QuestionMoreActionsMenu } from "../QuestionMoreActionsMenu";
 
@@ -27,6 +32,7 @@ type SetupOpts = {
   isAdmin: boolean;
   isEmailSetup: boolean;
   isEnterprise: boolean;
+  moderationReviews?: ModerationReview[];
 };
 
 export function setup({
@@ -35,13 +41,17 @@ export function setup({
   isAdmin = false,
   isEmailSetup = false,
   isEnterprise = false,
+  moderationReviews,
 }: SetupOpts) {
-  const card = createMockCard();
+  const card = createMockCard(
+    isEnterprise ? { moderation_reviews: moderationReviews ?? [] } : {},
+  );
 
   const tokenFeatures = createMockTokenFeatures({
     advanced_permissions: isEnterprise,
     dashboard_subscription_filters: isEnterprise,
     audit_app: isEnterprise,
+    content_verification: isEnterprise,
   });
 
   const settingValues = createMockSettings({

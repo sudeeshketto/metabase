@@ -1,13 +1,35 @@
-import type { DashboardId, ParameterId } from "metabase-types/api";
+import type { CardId, DashboardId, ParameterId } from "metabase-types/api";
+
+export type OnBeforeRequestHandlerConfig = {
+  method: "GET" | "POST";
+  url: string;
+  options: {
+    headers?: Record<string, string>;
+    hasBody: boolean;
+  } & Record<string, unknown>;
+  data: Record<string, unknown>;
+};
+
+export type OnBeforeRequestHandler = (
+  data: OnBeforeRequestHandlerConfig,
+) => Promise<void | OnBeforeRequestHandlerConfig>;
 
 const getDefaultPluginApi = () => ({
+  onBeforeRequestHandlers: {
+    overrideRequestsForPublicEmbeds: async (
+      _data: OnBeforeRequestHandlerConfig,
+    ): Promise<OnBeforeRequestHandlerConfig | void> => {},
+    overrideRequestsForStaticEmbeds: async (
+      _data: OnBeforeRequestHandlerConfig,
+    ): Promise<OnBeforeRequestHandlerConfig | void> => {},
+  },
   getRemappedCardParameterValueUrl: (
-    dashboardId: DashboardId,
+    cardId: CardId | string | undefined,
     parameterId: ParameterId,
   ) =>
-    `/api/card/${dashboardId}/params/${encodeURIComponent(parameterId)}/remapping`,
+    `/api/card/${cardId}/params/${encodeURIComponent(parameterId)}/remapping`,
   getRemappedDashboardParameterValueUrl: (
-    dashboardId: DashboardId,
+    dashboardId: DashboardId | undefined,
     parameterId: ParameterId,
   ) =>
     `/api/dashboard/${dashboardId}/params/${encodeURIComponent(parameterId)}/remapping`,

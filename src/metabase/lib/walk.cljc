@@ -1,20 +1,19 @@
 (ns metabase.lib.walk
   "Tools for walking and transforming a query."
-  (:refer-clojure :exclude [mapv empty?])
+  (:refer-clojure :exclude [mapv empty? get-in])
   (:require
    [medley.core :as m]
    [metabase.lib.dispatch :as lib.dispatch]
    [metabase.lib.hierarchy :as lib.hierarchy]
    [metabase.lib.join :as lib.join]
    [metabase.lib.schema :as lib.schema]
-   [metabase.lib.schema.common :as lib.schema.common]
    [metabase.lib.schema.join :as lib.schema.join]
    [metabase.lib.schema.mbql-clause :as lib.schema.mbql-clause]
    [metabase.lib.util :as lib.util]
    [metabase.util :as u]
    [metabase.util.malli :as mu]
    [metabase.util.malli.registry :as mr]
-   [metabase.util.performance :refer [mapv empty?]]))
+   [metabase.util.performance :refer [mapv empty? get-in]]))
 
 (declare walk-stages*)
 
@@ -196,12 +195,12 @@
 (mr/def ::path.stages-part
   [:cat
    [:= :stages]
-   ::lib.schema.common/int-greater-than-or-equal-to-zero])
+   nat-int?])
 
 (mr/def ::path.joins-part
   [:cat
    [:= :joins]
-   ::lib.schema.common/int-greater-than-or-equal-to-zero])
+   nat-int?])
 
 ;;; A path to a specific stage.
 (mr/def ::stage-path

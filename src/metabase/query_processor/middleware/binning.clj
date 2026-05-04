@@ -1,6 +1,7 @@
 (ns metabase.query-processor.middleware.binning
   "Middleware that handles `:binning` strategy in `:field` clauses. This adds extra info to the `:binning` options maps
   that contain the information Query Processors will need in order to perform binning."
+  (:refer-clojure :exclude [get-in])
   (:require
    [metabase.lib.binning.util :as lib.binning.util]
    [metabase.lib.core :as lib]
@@ -14,7 +15,8 @@
    [metabase.util :as u]
    [metabase.util.i18n :refer [tru]]
    [metabase.util.malli :as mu]
-   [metabase.util.malli.registry :as mr]))
+   [metabase.util.malli.registry :as mr]
+   [metabase.util.performance :refer [get-in]]))
 
 (mr/def ::field-id-or-name->filters
   [:map-of [:or ::lib.schema.id/field :string] ::lib.schema/filters])
@@ -26,8 +28,8 @@
   (reduce
    (partial merge-with concat)
    {}
-   (for [subclause        (lib.util.match/match filters #{:between :< :<= :> :>=})
-         field-id-or-name (lib.util.match/match subclause [:field _opts field-id-or-name] field-id-or-name)]
+   (for [subclause        (lib.util.match/match-many filters [#{:between :< :<= :> :>=} & _] &match)
+         field-id-or-name (lib.util.match/match-many subclause [:field _opts field-id-or-name] field-id-or-name)]
      {field-id-or-name [subclause]})))
 
 (mu/defn- extract-bounds :- [:map [:min-value number?] [:max-value number?]]
@@ -40,11 +42,10 @@
   (let [{global-min :min, global-max :max} (get-in fingerprint [:type :type/Number])
         filter-clauses                     (get field-id-or-name->filters field-id-or-name)
         ;; [:between <field> <min> <max>] or [:< <field> <x>]
-        user-maxes                         (lib.util.match/match filter-clauses
-                                             [(_tag :guard #{:< :<= :between}) _opts & args] (last args))
-        user-mins                          (lib.util.match/match filter-clauses
-                                             [(_tag :guard #{:> :>= :between}) _opts _field min-val & _]
-                                             min-val)
+        user-maxes                         (lib.util.match/match-many filter-clauses
+                                             [#{:< :<= :between} _opts & args] (last args))
+        user-mins                          (lib.util.match/match-many filter-clauses
+                                             [#{:> :>= :between} _opts _field min-val & _] min-val)
         min-value                          (or (when (seq user-mins)
                                                  (apply max user-mins))
                                                global-min)
@@ -76,7 +77,7 @@
                                                                                      metadata
                                                                                      min-value max-value)
         resolved-options                           (merge min-max resolved-options)
-        ;; Bail out and use unmodifed version if we can't converge on a nice version.
+        ;; Bail out and use unmodified version if we can't converge on a nice version.
         new-options (or (lib.binning.util/nicer-breakout new-strategy resolved-options)
                         resolved-options)]
     (lib/update-options field-ref update :binning merge {:strategy new-strategy} new-options)))
@@ -100,9 +101,11 @@
        (when (= path-type :lib.walk/stage)
          (lib.util.match/match-lite clause
            ;; first update all the `:binning` options
-           [:field (_opts :guard :binning) _id-or-name]
+           [:field {:binning &truthy} _id-or-name]
            (update-binned-field query path (path->field-id-or-name->filters path) clause)
 
            ;; then do another pass and update `:lib/original-binning` options
-           [:field (_opts :guard :lib/original-binning) _id-or-name]
-           (propagate-original-binning query path clause)))))))
+           [:field {:lib/original-binning &truthy} _id-or-name]
+           (propagate-original-binning query path clause)
+
+           _ nil))))))

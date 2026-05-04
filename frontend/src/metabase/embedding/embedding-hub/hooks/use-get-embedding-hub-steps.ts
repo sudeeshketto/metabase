@@ -1,8 +1,11 @@
 import { useCallback, useMemo } from "react";
 import { t } from "ttag";
 
-import { useDispatch } from "metabase/lib/redux";
-import type { SdkIframeEmbedSetupModalProps } from "metabase/plugins";
+import {
+  PLUGIN_TENANTS,
+  type SdkIframeEmbedSetupModalInitialState,
+} from "metabase/plugins";
+import { useDispatch } from "metabase/redux";
 import { setOpenModalWithProps } from "metabase/redux/ui";
 
 import type { EmbeddingHubStep } from "../types";
@@ -11,7 +14,7 @@ export const useGetEmbeddingHubSteps = (): EmbeddingHubStep[] => {
   const dispatch = useDispatch();
 
   const openEmbedModal = useCallback(
-    (props: Pick<SdkIframeEmbedSetupModalProps, "initialState">) => {
+    (props: { initialState: SdkIframeEmbedSetupModalInitialState }) => {
       dispatch(
         setOpenModalWithProps({
           id: "embed",
@@ -23,38 +26,31 @@ export const useGetEmbeddingHubSteps = (): EmbeddingHubStep[] => {
   );
 
   return useMemo(() => {
+    const isTenantsFeatureAvailable = PLUGIN_TENANTS.isEnabled;
+
     const TEST_EMBED: EmbeddingHubStep = {
       id: "create-test-embed",
       title: t`Create embed`,
-      icon: "test_tube",
       actions: [
         {
           title: t`Get embed snippet`,
           description: t`Embed a dashboard, question, the query builder or the collection browser. Configure the experience and customize the appearance.`,
           onClick: () => {
             openEmbedModal({
-              initialState: { useExistingUserSession: true },
+              initialState: {
+                isGuest: true,
+                useExistingUserSession: true,
+              },
             });
           },
           variant: "outline",
         },
       ],
-      image: {
-        src: "app/assets/img/embedding_hub_create_embed.png",
-        srcSet: "app/assets/img/embedding_hub_create_embed@2x.png 2x",
-        alt: t`Screenshot of creating an embed`,
-      },
     };
 
     const ADD_DATA: EmbeddingHubStep = {
       id: "add-data",
       title: t`Add your data`,
-      icon: "add_data",
-      image: {
-        src: "app/assets/img/onboarding_data_diagram.png",
-        srcSet: "app/assets/img/onboarding_data_diagram@2x.png 2x",
-        alt: t`Data sources and ETL diagram`,
-      },
       actions: [
         {
           title: t`Connect a database`,
@@ -68,12 +64,6 @@ export const useGetEmbeddingHubSteps = (): EmbeddingHubStep[] => {
     const CREATE_DASHBOARD: EmbeddingHubStep = {
       id: "create-dashboard",
       title: t`Prepare data`,
-      icon: "dashboard",
-      video: {
-        id: "FOAXF4p1AL0",
-        trackingId: "COmu2w0SqGagUoVp",
-        title: t`How to find and use X-rays?`,
-      },
       actions: [
         {
           title: t`Create a dashboard`,
@@ -81,77 +71,65 @@ export const useGetEmbeddingHubSteps = (): EmbeddingHubStep[] => {
           modal: { type: "xray-dashboard" },
           variant: "outline",
         },
+      ],
+    };
+
+    const DATA_PERMISSIONS_AND_ENABLE_TENANTS: EmbeddingHubStep = {
+      id: "data-permissions-and-enable-tenants",
+      title: t`Pick a strategy for users and permissions`,
+      actions: [
         {
-          title: t`Create models`,
-          description: t`Set up data models for your embedded analytics.`,
-          to: "/model/new",
-          optional: true,
-          stepId: "create-models",
+          title: t`Configure data permissions and enable tenants`,
+          description: t`Set granular permissions for multi-tenancy to control data access. Share dashboards, questions, and models with external users and allow them to create content, while restricting access to internal or other tenants' data.`,
+          to: "/admin/embedding/setup-guide/permissions",
+          variant: "outline",
+          stepId: "data-permissions-and-enable-tenants",
         },
       ],
     };
 
-    const SECURE_EMBEDS: EmbeddingHubStep = {
-      id: "secure-embeds",
-      title: t`Security and permissions`,
-      icon: "lock",
+    const SSO_CONFIGURED: EmbeddingHubStep = {
+      id: "sso-configured",
+      title: t`Set up authentication`,
       actions: [
         {
           title: t`Configure SSO`,
-          description: t`Configure JWT or SAML authentication to ensure only authorized users can access your embeds.`,
-          docsPath: "embedding/embedded-analytics-js#set-up-sso",
+          description: t`Configure JWT authentication to ensure only authorized users can access your embeds.`,
+          to: "/admin/embedding/setup-guide/sso",
           variant: "outline",
-          stepId: "secure-embeds",
-        },
-        {
-          title: t`Configure data permissions`,
-          docsPath:
-            "permissions/embedding#one-database-for-all-customers-commingled-setups",
-          description: t`Manage permissions to limit what data your users can access.`,
-          variant: "outline",
-          stepId: "configure-row-column-security",
-          optional: true,
+          stepId: "sso-configured",
         },
       ],
-      image: {
-        src: "app/assets/img/embedding_hub_secure_embeds_diagram.png",
-        srcSet: "app/assets/img/embedding_hub_secure_embeds_diagram@2x.png 2x",
-        alt: t`Diagram of the SSO authentication workflow`,
-      },
     };
 
     const EMBED_PRODUCTION: EmbeddingHubStep = {
       id: "embed-production",
       title: t`Deployment`,
-      icon: "code_block",
       actions: [
         {
-          title: t`Embed in production`,
+          title: t`Embed in production with SSO`,
           description: t`Deploy your embedded dashboard to a production environment and share with your users.`,
           onClick: () => {
             openEmbedModal({
-              initialState: { useExistingUserSession: false },
+              initialState: {
+                isGuest: false,
+                useExistingUserSession: false,
+              },
             });
           },
           variant: "outline",
         },
       ],
-      image: {
-        src: "app/assets/img/embedding_hub_create_embed.png",
-        srcSet: "app/assets/img/embedding_hub_create_embed@2x.png 2x",
-        alt: t`Screenshot of creating an embed`,
-      },
-      infoAlert: {
-        type: "locked",
-        message: t`Configure SSO authentication to unlock this step.`,
-      },
     };
 
     return [
       ADD_DATA,
       CREATE_DASHBOARD,
       TEST_EMBED,
-      SECURE_EMBEDS,
+      ...(isTenantsFeatureAvailable
+        ? [DATA_PERMISSIONS_AND_ENABLE_TENANTS]
+        : []),
+      SSO_CONFIGURED,
       EMBED_PRODUCTION,
     ];
   }, [openEmbedModal]);

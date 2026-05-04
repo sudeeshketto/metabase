@@ -85,7 +85,7 @@
     (throttle/check throttler throttle-key)))
 
 (mu/defn- login :- session.schema/SessionSchema
-  "Attempt to login with different avaialable methods with `username` and `password`, returning new Session ID or
+  "Attempt to login with different available methods with `username` and `password`, returning new Session ID or
   throwing an Exception if login could not be completed."
   [username    :- ms/NonBlankString
    password    :- ms/NonBlankString
@@ -114,6 +114,10 @@
   [& body]
   `(do-http-401-on-error (fn [] ~@body)))
 
+;; TODO (Cam 2025-11-25) please add a response schema to this API endpoint, it makes it easier for our customers to
+;; use our API + we will need it when we make auto-TypeScript-signature generation happen
+;;
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-has-response-schema]}
 (api.macros/defendpoint :post "/"
   "Login."
   [_route-params
@@ -135,6 +139,10 @@
                                    (login-throttlers :username)   username]
           (do-login))))))
 
+;; TODO (Cam 2025-11-25) please add a response schema to this API endpoint, it makes it easier for our customers to
+;; use our API + we will need it when we make auto-TypeScript-signature generation happen
+;;
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-has-response-schema]}
 (api.macros/defendpoint :delete "/"
   "Logout."
   ;; `metabase-session-key` gets added automatically by the [[metabase.server.middleware.session]] middleware
@@ -157,15 +165,16 @@
    :ip-address (throttle/make-throttler :email :attempts-threshold 50)})
 
 (defn- password-reset-disabled?
-  "Disable password reset for all users created with SSO logins, unless those Users were created with Google SSO
-  in which case disable reset for them as long as the Google SSO feature is enabled.
+  "Disable password reset for users whose SSO provider is still active — they should use SSO.
+   When a provider is no longer available (e.g., after license downgrade), allow password reset
+   so users aren't locked out.
 
-  Disable password reset for any support users -- users with a auth-identity of type `support-access-request`."
+   Always disable password reset for support-access users."
   [user-id sso-source]
   (cond
     (t2/exists? :model/AuthIdentity :user_id user-id :provider "support-access-grant") true
-    (and (= sso-source :google) (not (sso/sso-enabled?))) (sso/google-auth-enabled)
-    :else (some? sso-source)))
+    (some? sso-source) (sso/sso-source-enabled? sso-source)
+    :else false))
 
 (defn- forgot-password-impl
   [email]
@@ -176,19 +185,22 @@
                (t2/select-one [:model/User :id :sso_source :is_active]
                               :%lower.email
                               (u/lower-case-en email))]
+      ;; If user uses any *enabled* SSO method to log in, no need to generate a reset token.
       (if (password-reset-disabled? user-id sso-source)
-        ;; If user uses any SSO method to log in, no need to generate a reset token. Some cases for Google SSO
-        ;; are exempted see `password-reset-allowed?`
         (messages/send-password-reset-email! email sso-source nil is-active?)
         (let [reset-token        (auth-identity/create-password-reset! user-id)
               password-reset-url (str (system/site-url) "/auth/reset_password/" reset-token)]
-          (log/info password-reset-url)
           (messages/send-password-reset-email! email nil password-reset-url is-active?)))
       (events/publish-event! :event/password-reset-initiated
                              {:object (assoc user :token (t2/select-one-fn :reset_token :model/User :id user-id))}))))
 
 ;; TODO (Cam 10/28/25) -- fix this endpoint route to use kebab-case for consistency with the rest of our REST API
-#_{:clj-kondo/ignore [:metabase/validate-defendpoint-route-uses-kebab-case]}
+;;
+;; TODO (Cam 2025-11-25) please add a response schema to this API endpoint, it makes it easier for our customers to
+;; use our API + we will need it when we make auto-TypeScript-signature generation happen
+;;
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-route-uses-kebab-case
+                      :metabase/validate-defendpoint-has-response-schema]}
 (api.macros/defendpoint :post "/forgot_password"
   "Send a reset email when user has forgotten their password."
   [_route-params
@@ -208,7 +220,12 @@
   (throttle/make-throttler :password :attempts-threshold 10))
 
 ;; TODO (Cam 10/28/25) -- fix this endpoint route to use kebab-case for consistency with the rest of our REST API
-#_{:clj-kondo/ignore [:metabase/validate-defendpoint-route-uses-kebab-case]}
+;;
+;; TODO (Cam 2025-11-25) please add a response schema to this API endpoint, it makes it easier for our customers to
+;; use our API + we will need it when we make auto-TypeScript-signature generation happen
+;;
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-route-uses-kebab-case
+                      :metabase/validate-defendpoint-has-response-schema]}
 (api.macros/defendpoint :post "/reset_password"
   "Reset password with a reset token."
   [_route-params
@@ -231,7 +248,12 @@
       (api/throw-invalid-param-exception :password (tru "Invalid reset token")))))
 
 ;; TODO (Cam 10/28/25) -- fix this endpoint route to use kebab-case for consistency with the rest of our REST API
-#_{:clj-kondo/ignore [:metabase/validate-defendpoint-route-uses-kebab-case]}
+;;
+;; TODO (Cam 2025-11-25) please add a response schema to this API endpoint, it makes it easier for our customers to
+;; use our API + we will need it when we make auto-TypeScript-signature generation happen
+;;
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-route-uses-kebab-case
+                      :metabase/validate-defendpoint-has-response-schema]}
 (api.macros/defendpoint :get "/password_reset_token_valid"
   "Check if a password reset token is valid and isn't expired."
   [_route-params
@@ -243,6 +265,10 @@
                       {:token token})]
     {:valid (:success? auth-result)}))
 
+;; TODO (Cam 2025-11-25) please add a response schema to this API endpoint, it makes it easier for our customers to
+;; use our API + we will need it when we make auto-TypeScript-signature generation happen
+;;
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-has-response-schema]}
 (api.macros/defendpoint :get "/properties"
   "Get all properties and their values. These are the specific `Settings` that are readable by the current user, or are
   public if no user is logged in."
@@ -250,7 +276,12 @@
   (setting/user-readable-values-map (setting/current-user-readable-visibilities)))
 
 ;; TODO (Cam 10/28/25) -- fix this endpoint route to use kebab-case for consistency with the rest of our REST API
-#_{:clj-kondo/ignore [:metabase/validate-defendpoint-route-uses-kebab-case]}
+;;
+;; TODO (Cam 2025-11-25) please add a response schema to this API endpoint, it makes it easier for our customers to
+;; use our API + we will need it when we make auto-TypeScript-signature generation happen
+;;
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-route-uses-kebab-case
+                      :metabase/validate-defendpoint-has-response-schema]}
 (api.macros/defendpoint :post "/google_auth"
   "Login with Google Auth."
   [_route-params
@@ -285,6 +316,10 @@
         (throttle/with-throttling [(login-throttlers :ip-address) (request/ip-address request)]
           (do-login))))))
 
+;; TODO (Cam 2025-11-25) please add a response schema to this API endpoint, it makes it easier for our customers to
+;; use our API + we will need it when we make auto-TypeScript-signature generation happen
+;;
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-has-response-schema]}
 (api.macros/defendpoint :post "/password-check"
   "Endpoint that checks if the supplied password meets the currently configured password complexity rules."
   [_route-params

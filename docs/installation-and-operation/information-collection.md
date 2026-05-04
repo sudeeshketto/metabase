@@ -33,8 +33,8 @@ This anonymous data helps us figure out things like:
 
 If you're self-hosting Metabase, you can opt out of providing us with your anonymous usage data:
 
-1. Click on the gear icon.
-2. Select **Admin settings**.
+1. Click the grid icon.
+2. Select **Admin**.
 3. Go to the **Settings** tab.
 4. Click **General**
 5. Toggle the **Anonymous tracking** option.
@@ -54,7 +54,7 @@ The token validation request includes:
 - Count of internal users
 - Count of email domains
 - Count of embedded dashboards and questions
-- Types of embedding (static, interactive, Embedded analytics SDK, Embedded analytics JS)
+- Types of embedding (modular, guest, SDK, full app)
 - Site UUID (just an identifier for your Metabase)
 - Metabase version
 - Query execution timestamp (last UTC day)

@@ -139,7 +139,7 @@ describe("scenarios > embedding-sdk > dashboard-click-behavior", () => {
   });
 
   it("should allow external URL click behaviors in the SDK (EMB-878)", () => {
-    // External click behaviour use the open() function in metabase/lib/dom creates temporary anchors and calls .click()
+    // External click behaviour use the open() function in metabase/utils/dom creates temporary anchors and calls .click()
     // To check that we call it, we stub the anchor element click
     stubAnchorClick();
 
@@ -244,18 +244,19 @@ describe("scenarios > embedding-sdk > dashboard-click-behavior", () => {
   });
 
   it("columns that return a string url should be rendered as a link", () => {
+    cy.intercept("GET", "/api/card/*").as("getCard");
+
     // We can't map them easily to click behaviors, so they stay as links for now
     // see https://github.com/metabase/metabase/issues/64622
     cy.get<string>("@questionId").then((questionId) => {
       mountSdkContent(<InteractiveQuestion questionId={questionId} />);
     });
 
-    cy.intercept("GET", "/api/card/*").as("getCard");
     cy.wait("@getCard");
 
-    cy.findByRole("link", { name: "https://example.org/979" })
+    cy.findByRole("link", { name: "https://example.org/3" })
       .should("have.length", 1)
-      .should("have.attr", "href", "https://example.org/979");
+      .should("have.attr", "href", "https://example.org/3");
   });
 
   it("columns that have 'type/URL' semantic type should open URL via click behavior", () => {
@@ -313,11 +314,11 @@ describe("scenarios > embedding-sdk > dashboard-click-behavior", () => {
 
             getSdkRoot().within(() => {
               H.getDashboardCard(0)
-                .findAllByText("https://example.org/761")
+                .findAllByText("https://example.org/2")
                 .first()
                 .click();
 
-              expectClickBehaviorForUrl("https://example.org/761");
+              expectClickBehaviorForUrl("https://example.org/2");
             });
           });
         });
@@ -359,9 +360,9 @@ describe("scenarios > embedding-sdk > dashboard-click-behavior", () => {
         mountSdkContent(<EditableDashboard dashboardId={dashboard.id} />);
 
         getSdkRoot().within(() => {
-          H.getDashboardCard(0).findAllByText("Link to 493").first().click();
+          H.getDashboardCard(0).findAllByText("Link to 1").first().click();
 
-          expectClickBehaviorForUrl("https://example.org/493");
+          expectClickBehaviorForUrl("https://example.org/1");
         });
       });
     });
@@ -403,9 +404,9 @@ describe("scenarios > embedding-sdk > dashboard-click-behavior", () => {
         mountSdkContent(<EditableDashboard dashboardId={dashboard.id} />);
 
         getSdkRoot().within(() => {
-          H.getDashboardCard(0).findAllByText("Link to 493").first().click();
+          H.getDashboardCard(0).findAllByText("Link to 1").first().click();
 
-          expectClickBehaviorForUrl(`${window.location.origin}/test/493`);
+          expectClickBehaviorForUrl(`${window.location.origin}/test/1`);
         });
       });
     });

@@ -2,10 +2,11 @@
 import { t } from "ttag";
 
 import { useCancelCloudMigrationMutation } from "metabase/api";
-import ExternalLink from "metabase/common/components/ExternalLink";
+import { ExternalLink } from "metabase/common/components/ExternalLink";
 import { useSetting } from "metabase/common/hooks";
 import { useToggle } from "metabase/common/hooks/use-toggle";
-import { useDispatch } from "metabase/lib/redux";
+import type { Plan } from "metabase/common/utils/plan";
+import { useDispatch } from "metabase/redux";
 import { addUndo } from "metabase/redux/undo";
 import {
   Box,
@@ -23,8 +24,9 @@ import type { InProgressCloudMigration, InProgressStates } from "./utils";
 import { getMigrationUrl } from "./utils";
 
 interface MigrationInProgressProps {
+  storeUrl: string;
+  plan: Plan;
   migration: InProgressCloudMigration;
-  checkoutUrl: string;
 }
 
 const progressMessage: Record<InProgressStates, string> = {
@@ -35,8 +37,9 @@ const progressMessage: Record<InProgressStates, string> = {
 };
 
 export const MigrationInProgress = ({
+  storeUrl,
+  plan,
   migration,
-  checkoutUrl,
 }: MigrationInProgressProps) => {
   const dispatch = useDispatch();
 
@@ -54,19 +57,18 @@ export const MigrationInProgress = ({
       addUndo({
         icon: "info",
         message: t`Migration to Metabase Cloud has been canceled.`,
-        undo: false,
       }),
     );
   };
 
-  const migrationUrl = getMigrationUrl(checkoutUrl, migration);
+  const migrationUrl = getMigrationUrl(storeUrl, plan, migration);
 
   return (
     <>
       <MigrationCard>
         <Flex gap="1.5rem" align="start">
           <Flex
-            bg="brand-light"
+            bg="background-brand"
             h="64px"
             style={{ borderRadius: "50%", flex: "0 0 64px" }}
             justify="center"
@@ -86,7 +88,7 @@ export const MigrationInProgress = ({
             )}
 
             <Box mt="lg" mb="md">
-              <Text size="md" c="text-medium">
+              <Text size="md" c="text-secondary">
                 {progressMessage[migration.state]}
               </Text>
               <Progress value={migration.progress} mt=".25rem" />

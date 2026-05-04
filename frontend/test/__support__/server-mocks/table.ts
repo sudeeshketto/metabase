@@ -1,6 +1,6 @@
 import fetchMock from "fetch-mock";
 
-import type { ForeignKey, Table } from "metabase-types/api";
+import type { ForeignKey, Table, TableId } from "metabase-types/api";
 
 import { setupFieldEndpoints } from "./field";
 
@@ -38,6 +38,16 @@ export function setupTableQueryMetadataEndpoint(table: Table) {
   fetchMock.get(`path:/api/table/${table.id}/query_metadata`, table);
 }
 
+export function setupTableQueryMetadataEndpointError(
+  tableId: TableId,
+  message = "Table not found",
+) {
+  fetchMock.get(`path:/api/table/${tableId}/query_metadata`, {
+    status: 500,
+    body: message,
+  });
+}
+
 export function setupTablesEndpoints(tables: Table[]) {
   fetchMock.get("path:/api/table", tables);
   tables.forEach((table) => setupTableEndpoints(table));
@@ -70,17 +80,17 @@ export function setupTableSearchEndpoint(tables: Table[]) {
 
 export function setupTablesBulkEndpoints() {
   fetchMock.post(
-    "path:/api/ee/data-studio/table/rescan-values",
+    "path:/api/data-studio/table/rescan-values",
     {},
     { name: "tables-rescan-values" },
   );
   fetchMock.post(
-    "path:/api/ee/data-studio/table/sync-schema",
+    "path:/api/data-studio/table/sync-schema",
     {},
     { name: "tables-sync-schema" },
   );
   fetchMock.post(
-    "path:/api/ee/data-studio/table/discard-values",
+    "path:/api/data-studio/table/discard-values",
     {},
     { name: "tables-discard-values" },
   );

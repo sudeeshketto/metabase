@@ -6,9 +6,10 @@ import {
   setupPropertiesEndpoints,
 } from "__support__/server-mocks";
 import { renderWithProviders, screen, waitFor, within } from "__support__/ui";
+import { getPlan } from "metabase/common/utils/plan";
+import { createMockState } from "metabase/redux/store/mocks";
 import type { CloudMigration } from "metabase-types/api/cloud-migration";
 import { createMockSettings, createMockUser } from "metabase-types/api/mocks";
-import { createMockState } from "metabase-types/store/mocks";
 
 import { CloudPanel } from "./CloudPanel";
 
@@ -29,8 +30,9 @@ const setup = () => {
     },
   );
 
-  const STORE_URL = store.getState().settings.values["store-url"];
-  const metabaseStoreLink = `${STORE_URL}/checkout?migration-id=${BASE_RESPONSE.external_id}`;
+  const storeUrl = store.getState().settings.values["store-url"];
+  const plan = getPlan(store.getState().settings.values["token-features"]);
+  const metabaseStoreLink = `${storeUrl}/checkout?migration-source-plan=${plan}&migration-id=${BASE_RESPONSE.external_id}`;
 
   return { mockMigrationStart, store, metabaseStoreLink };
 };
@@ -131,11 +133,13 @@ describe("CloudPanel", () => {
     const { mockMigrationStart, metabaseStoreLink } = setup();
 
     await expectErrorState();
-    await expectInitState();
-    await userEvent.click(screen.getByRole("button", { name: "Try for free" }));
+    expect(
+      screen.queryByRole("heading", { name: "Migrate to Metabase Cloud" }),
+    ).not.toBeInTheDocument();
 
-    await expectStartConfirmationModal();
-    await userEvent.click(screen.getByRole("button", { name: /Migrate now/ }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Restart the process/ }),
+    );
 
     fetchMockCloudMigrationGetSequence([
       { ...INIT_RESPONSE, id: 2 },
@@ -242,7 +246,7 @@ const expectStartConfirmationModal = async () => {
   ).toBeInTheDocument();
 };
 
-const expectProgressState = async (STORE_LINK: string) => {
+const expectProgressState = async (storeUrl: string) => {
   expect(
     await screen.findByText("Migrating to Metabase Cloud…"),
   ).toBeInTheDocument();
@@ -250,16 +254,16 @@ const expectProgressState = async (STORE_LINK: string) => {
   // expect to have correct store link for this exact migration
   const storeLink = screen.getByRole("link", { name: /Metabase Store/ });
   expect(storeLink).toBeInTheDocument();
-  expect(storeLink).toHaveAttribute("href", STORE_LINK);
+  expect(storeLink).toHaveAttribute("href", storeUrl);
 };
 
-const expectSuccessState = async (STORE_LINK: string) => {
+const expectSuccessState = async (storeUrl: string) => {
   expect(
     await screen.findByText("The snapshot has been uploaded to the Cloud"),
   ).toBeInTheDocument();
   expect(
     screen.getByRole("link", { name: /Go to Metabase Store/ }),
-  ).toHaveAttribute("href", STORE_LINK);
+  ).toHaveAttribute("href", storeUrl);
 };
 
 const expectCancelConfirmationModal = async () => {

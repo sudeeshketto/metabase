@@ -1,8 +1,12 @@
 import dayjs from "dayjs";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { t } from "ttag";
 import * as Yup from "yup";
 
+import {
+  getTimelineIcons,
+  getTimelineName,
+} from "metabase/common/utils/timelines";
 import {
   Form,
   FormDateInput,
@@ -13,9 +17,6 @@ import {
   FormTextInput,
   FormTextarea,
 } from "metabase/forms";
-import * as Errors from "metabase/lib/errors";
-import { parseTimestamp } from "metabase/lib/time-dayjs";
-import { getTimelineIcons, getTimelineName } from "metabase/lib/timelines";
 import {
   Button,
   Flex,
@@ -25,6 +26,8 @@ import {
   Stack,
   TimeInput,
 } from "metabase/ui";
+import * as Errors from "metabase/utils/errors";
+import { parseTimestamp } from "metabase/utils/time-dayjs";
 import type {
   FormattingSettings,
   Timeline,
@@ -39,8 +42,12 @@ const EVENT_SCHEMA = Yup.object({
   timestamp: Yup.string().required(Errors.required),
   time_matters: Yup.boolean(),
   icon: Yup.string().required(Errors.required),
-  timeline_id: Yup.number(),
+  timeline_id: Yup.string(),
 });
+
+type TimelineEventFormData = Omit<TimelineEventData, "timeline_id"> & {
+  timeline_id: string | undefined;
+};
 
 export interface EventFormOwnProps {
   initialValues: TimelineEventData;
@@ -78,14 +85,31 @@ const EventForm = ({
     }));
   }, [timelines]);
 
+  const preparedInitialValues: TimelineEventFormData = {
+    ...initialValues,
+    timestamp: initialValues.timestamp || dayjs().utc(true).toISOString(),
+    timeline_id: initialValues.timeline_id
+      ? String(initialValues.timeline_id)
+      : undefined,
+  };
+
+  const handleSubmit = useCallback(
+    (values: TimelineEventFormData) => {
+      return onSubmit({
+        ...values,
+        timeline_id: values.timeline_id
+          ? parseInt(values.timeline_id, 10)
+          : undefined,
+      });
+    },
+    [onSubmit],
+  );
+
   return (
     <FormProvider
-      initialValues={{
-        ...initialValues,
-        timestamp: initialValues.timestamp || dayjs().utc(true).toISOString(),
-      }}
+      initialValues={preparedInitialValues}
       validationSchema={EVENT_SCHEMA}
-      onSubmit={onSubmit}
+      onSubmit={handleSubmit}
     >
       {({ dirty, values, setFieldValue }) => (
         <Form disabled={!dirty} data-testid="event-form">
@@ -165,10 +189,10 @@ const EventForm = ({
                 </Group>
               )}
             />
-            {timelines.length > 1 && (
+            {timelines?.length > 1 && (
               <FormSelect
                 name="timeline_id"
-                title={t`Timeline`}
+                label={t`Timeline`}
                 data={timelineOptions}
               />
             )}

@@ -2,12 +2,34 @@ import type {
   MetabaseCollection,
   SdkCollectionId,
 } from "embedding-sdk-bundle/types/collection";
-import type { CreateDashboardProperties } from "metabase/dashboard/containers/CreateDashboardForm";
+import type { CreateDashboardProperties } from "metabase/common/CreateDashboard/CreateDashboardForm";
 import type { CardDisplayType } from "metabase-types/api";
 
-import type { SdkEntityId } from "./entity";
+import type { SdkEntityId, SdkEntityToken } from "./entity";
 
 export type SdkDashboardId = number | string | SdkEntityId;
+
+export type SdkDashboardEntityPublicProps =
+  | {
+      /**
+       * The ID of the dashboard.
+       *  <br/>
+       * This is either:
+       *  <br/>
+       *  - the numerical ID when accessing a dashboard link, i.e. `http://localhost:3000/dashboard/1-my-dashboard` where the ID is `1`
+       *  <br/>
+       *  - the string ID found in the `entity_id` key of the dashboard object when using the API directly or using the SDK Collection Browser to return data
+       */
+      dashboardId: SdkDashboardId | null;
+      token?: never;
+    }
+  | {
+      dashboardId?: never;
+      /**
+       * A valid JWT token for the guest embed.
+       */
+      token: SdkEntityToken | null;
+    };
 
 /**
  * The Dashboard entity

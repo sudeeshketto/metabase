@@ -2,13 +2,13 @@ import { Fragment } from "react";
 import { Link } from "react-router";
 import { t } from "ttag";
 
+import CS from "metabase/css/core/index.css";
 import {
   Form,
   FormErrorMessage,
   FormProvider,
   FormSubmitButton,
 } from "metabase/forms";
-import * as Urls from "metabase/lib/urls";
 import type { CheckDependenciesFormProps } from "metabase/plugins";
 import {
   Anchor,
@@ -21,6 +21,7 @@ import {
   Stack,
   Text,
 } from "metabase/ui";
+import * as Urls from "metabase/urls";
 import visualizations from "metabase/visualizations";
 import type {
   Card as ApiCard,
@@ -60,7 +61,7 @@ export function CheckDependenciesForm({
             <DependencyItemCard key={index} item={item} />
           ))}
         </Stack>
-        <Group px="xl">
+        <Group px="xl" wrap="nowrap">
           <Box flex={1}>
             <FormErrorMessage />
           </Box>
@@ -106,7 +107,7 @@ function DependencyItemCard({ item }: DependencyItemCardProps) {
       shadow="none"
       withBorder
     >
-      <Stack gap="xs">
+      <Stack className={CS.textWrap} gap="xs">
         <Group c="brand" gap="sm" wrap="nowrap">
           <FixedSizeIcon name={getItemIcon(item)} />
           <Box fw="bold" lh="h4">
@@ -154,7 +155,7 @@ function getItemName(item: DependencyItem) {
 function getItemLink(item: DependencyItem) {
   switch (item.type) {
     case "card":
-      return Urls.question(item.card);
+      return Urls.card(item.card);
     default:
       return Urls.transform(item.transform.id);
   }
@@ -162,32 +163,16 @@ function getItemLink(item: DependencyItem) {
 
 function getItemDescription(item: DependencyItem) {
   if (item.type === "card") {
-    const { collection, dashboard } = item.card;
-
-    if (collection != null) {
-      const ancestors = collection.effective_ancestors ?? [];
-      const breadcrumbs = [
-        ...ancestors.map((ancestor) => ({
-          title: ancestor.name,
-          to: Urls.collection(ancestor),
-        })),
-        { title: collection.name, to: Urls.collection(collection) },
-        ...(dashboard != null
-          ? [{ title: dashboard.name, to: Urls.dashboard(dashboard) }]
-          : []),
-      ];
-
-      return (
-        <Group gap="sm" wrap="nowrap">
-          <FixedSizeIcon
-            c="text-secondary"
-            name={dashboard != null ? "dashboard" : "collection"}
-            flex="0 0 auto"
-          />
-          <BreadcrumbList items={breadcrumbs} />
-        </Group>
-      );
-    }
+    return (
+      <Group gap="sm" wrap="nowrap">
+        <FixedSizeIcon
+          c="text-secondary"
+          name={getCardLinkIcon(item)}
+          flex="0 0 auto"
+        />
+        <BreadcrumbList items={getCardBreadcrumbs(item)} />
+      </Group>
+    );
   }
 
   if (item.type === "transform") {
@@ -201,6 +186,38 @@ function getItemDescription(item: DependencyItem) {
   return null;
 }
 
+function getCardBreadcrumbs(item: CardDependencyItem) {
+  const { collection, dashboard, document } = item.card;
+  if (collection == null) {
+    return [];
+  }
+
+  const ancestors = collection.effective_ancestors ?? [];
+  const breadcrumbs = ancestors.map((ancestor) => ({
+    title: ancestor.name,
+    to: Urls.collection(ancestor),
+  }));
+  breadcrumbs.push({ title: collection.name, to: Urls.collection(collection) });
+  if (dashboard != null) {
+    breadcrumbs.push({ title: dashboard.name, to: Urls.dashboard(dashboard) });
+  } else if (document != null) {
+    breadcrumbs.push({ title: document.name, to: Urls.document(document) });
+  }
+
+  return breadcrumbs;
+}
+
+function getCardLinkIcon(item: CardDependencyItem): IconName {
+  const { dashboard, document } = item.card;
+  if (dashboard != null) {
+    return "dashboard";
+  }
+  if (document != null) {
+    return "document";
+  }
+  return "collection";
+}
+
 type BreadcrumbItem = {
   title: string;
   to: string;
@@ -212,7 +229,14 @@ type BreadcrumbProps = {
 
 function Breadcrumb({ item }: BreadcrumbProps) {
   return (
-    <Anchor component={Link} to={item.to} c="text-secondary" fz="sm" lh="h5">
+    <Anchor
+      component={Link}
+      className={CS.textWrap}
+      to={item.to}
+      c="text-secondary"
+      fz="sm"
+      lh="h5"
+    >
       {item.title}
     </Anchor>
   );

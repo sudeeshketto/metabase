@@ -1,10 +1,11 @@
 import { match } from "ts-pattern";
 
 import { openSharingMenu } from "e2e/support/helpers/e2e-sharing-helpers";
+import { JWT_SHARED_SECRET } from "e2e/support/helpers/embedding-sdk-helpers/constants";
 import type { MetabaseTheme } from "metabase/embedding-sdk/theme/MetabaseTheme";
 import type { CreateApiKeyResponse } from "metabase-types/api";
 
-import { createApiKey } from "./api";
+import { createApiKey, updateSetting } from "./api";
 import { getIframeBody } from "./e2e-embedding-helpers";
 import { enableJwtAuth } from "./e2e-jwt-helpers";
 import { restore } from "./e2e-setup-helpers";
@@ -14,6 +15,8 @@ import {
   mockAuthProviderAndJwtSignIn,
 } from "./embedding-sdk-testing";
 
+const IS_ENTERPRISE = Cypress.expose("IS_ENTERPRISE");
+
 const EMBED_JS_PATH = "http://localhost:4000/app/embed.js";
 
 /**
@@ -22,6 +25,8 @@ const EMBED_JS_PATH = "http://localhost:4000/app/embed.js";
 export interface BaseEmbedTestPageOptions {
   // Passed to defineMetabaseConfig
   metabaseConfig?: {
+    isGuest?: boolean;
+    guestEmbedProviderUri?: string;
     instanceUrl?: string;
     apiKey?: string;
     useExistingUserSession?: boolean;
@@ -56,10 +61,19 @@ export interface MetabaseElement {
   };
 }
 export const waitForSimpleEmbedIframesToLoad = (n: number = 1) => {
-  cy.get("iframe[data-metabase-embed]").should("have.length", n);
-  cy.get("iframe[data-iframe-loaded]").should("have.length", n, {
-    timeout: 10_000, // the iframe can slow to load, we need to wait to decrease flakiness
-  });
+  // we do need _all_ these timeouts to decrease flakiness
+  // see https://github.com/metabase/metabase/pull/66954#issuecomment-3661512082
+  cy.get("iframe[data-metabase-embed]", { timeout: 40_000 }).should(
+    "have.length",
+    n,
+  );
+  cy.get("iframe[data-iframe-loaded]", { timeout: 40_000 }).should(
+    "have.length",
+    n,
+    {
+      timeout: 40_000, // the iframe can slow to load, we need to wait to decrease flakiness
+    },
+  );
 };
 
 export const getSimpleEmbedIframeContent = (iframeIndex = 0) => {
@@ -75,7 +89,7 @@ export const getSimpleEmbedIframeContent = (iframeIndex = 0) => {
     "have.length.greaterThan",
     iframeIndex,
     {
-      timeout: 10_000, // the iframe can slow to load, we need to wait to decrease flakiness
+      timeout: 40_000, // the iframe can slow to load, we need to wait to decrease flakiness
     },
   );
 
@@ -183,21 +197,19 @@ const convertPropertiesToEmbedTagAttributes = (
  * @param {EnabledAuthMethods[]} enabledAuthMethods - The authentication methods to enable.
  */
 export function prepareSdkIframeEmbedTest({
-  withTokenFeatures = true,
+  withToken = "bleeding-edge",
   enabledAuthMethods = ["jwt"],
   signOut = false,
 }: {
-  withTokenFeatures?: boolean;
+  withToken?: false | "starter" | "bleeding-edge";
   enabledAuthMethods?: EnabledAuthMethods[];
   signOut?: boolean;
 } = {}) {
   restore();
   cy.signInAsAdmin();
 
-  if (withTokenFeatures) {
-    activateToken("bleeding-edge");
-  } else {
-    activateToken("starter");
+  if (withToken) {
+    activateToken(withToken);
   }
 
   cy.request("PUT", "/api/setting/enable-embedding-simple", {
@@ -215,6 +227,47 @@ export function prepareSdkIframeEmbedTest({
   if (signOut) {
     cy.signOut();
   }
+}
+
+/**
+ * Prepares the testing environment for sdk iframe embedding tests in guest embed mode.
+ */
+export function prepareGuestEmbedSdkIframeEmbedTest({
+  withTokenFeatures = true,
+  onPrepare,
+}: {
+  withTokenFeatures?: boolean;
+  onPrepare?: () => void;
+} = {}) {
+  restore();
+  cy.signInAsAdmin();
+
+  if (IS_ENTERPRISE) {
+    if (withTokenFeatures) {
+      activateToken("bleeding-edge");
+    } else {
+      activateToken("starter");
+    }
+  }
+
+  onPrepare?.();
+
+  cy.request("PUT", "/api/setting/enable-embedding-simple", {
+    value: true,
+  });
+  cy.request("PUT", "/api/setting/enable-embedding-static", {
+    value: true,
+  });
+
+  cy.intercept("GET", "/api/embed/card/*").as("getCard");
+  cy.intercept("GET", "/api/embed/card/*/query*").as("getCardQuery");
+  cy.intercept("GET", "/api/embed/pivot/card/*/query*").as("getCardPivotQuery");
+
+  updateSetting("embedding-secret-key", JWT_SHARED_SECRET);
+
+  mockEmbedJsToDevServer();
+
+  cy.signOut();
 }
 
 type EnabledAuthMethods = "jwt" | "saml" | "api-key";
@@ -265,6 +318,8 @@ export const getNewEmbedScriptTag = ({
 
 export const getNewEmbedConfigurationScript = ({
   instanceUrl = "http://localhost:4000",
+  isGuest,
+  guestEmbedProviderUri,
   theme,
   apiKey,
   useExistingUserSession,
@@ -273,6 +328,8 @@ export const getNewEmbedConfigurationScript = ({
 }: BaseEmbedTestPageOptions["metabaseConfig"] = {}) => {
   const config = {
     instanceUrl,
+    isGuest,
+    guestEmbedProviderUri,
     apiKey,
     useExistingUserSession,
     theme,
@@ -319,7 +376,7 @@ export const visitCustomHtmlPage = (
  * to point it to the rspack dev server.
  */
 export const mockEmbedJsToDevServer = () => {
-  if (Cypress.env("CI")) {
+  if (Cypress.expose("CI")) {
     // we don't need this logic in CI, let's skip the check to avoid slowing down the tests
     return;
   }
@@ -343,6 +400,4 @@ export const mockEmbedJsToDevServer = () => {
 
 export function openEmbedJsModal() {
   openSharingMenu("Embed");
-
-  cy.findByText("Embedded Analytics JS").click();
 }

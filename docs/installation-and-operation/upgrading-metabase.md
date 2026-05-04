@@ -14,7 +14,7 @@ This page covers how to upgrade to a new Metabase release.
 
 ## Upgrading Metabase Cloud
 
-If you're on a [Metabase Cloud](https://www.metabase.com/pricing/) plan, we'll upgrade your Metabase automatically with each new release; no action needed on your end ([unless you're using the Embedded analytics SDK](#instances-using-the-embedded-analytics-sdk-on-metabase-cloud-must-request-an-upgrade)).
+If you're on a [Metabase Cloud](https://www.metabase.com/pricing/) plan, we'll upgrade your Metabase automatically with each new release; no action needed on your end ([unless you're using the modular embedding SDK](#instances-using-the-modular-embedding-sdk-on-metabase-cloud-must-request-an-upgrade)).
 
 How soon we upgrade you depends on the type of release:
 
@@ -23,19 +23,19 @@ How soon we upgrade you depends on the type of release:
 
 Cloud customers can request an early upgrade by emailing support at help@metabase.com. Include the URL of the Metabase you want us to upgrade.
 
-### Instances using the Embedded analytics SDK on Metabase Cloud must request an upgrade
+### Instances using the modular embedding SDK on Metabase Cloud must request an upgrade
 
-If you're using the [Embedded analytics SDK](../embedding/sdk/introduction.md) on Metabase Cloud, we pin your version so that it doesn't upgrade automatically, as you should test the changes before upgrading.
+If you're using the [modular embedding SDK](../embedding/sdk/introduction.md) on Metabase Cloud, we pin your version so that it doesn't upgrade automatically, as you should test the changes before upgrading.
 
 To upgrade your Metabase, you'll need to request an upgrade by [contacting support](https://www.metabase.com/help-premium).
 
-See our [upgrade guide for the Embedded analytics SDK](../embedding/sdk/upgrade.md).
+See our [upgrade guide for the modular embedding SDK](../embedding/sdk/upgrade.md).
 
 ## Upgrading a self-hosted Metabase
 
 Here are the steps for upgrading to a new Metabase version (major or minor):
 
-### 1. Back up of your application database
+### 1. Back up your application database
 
 The application database keeps track of every single thing (but the data of your connected database) of your Metabase instance. While it's unlikely you'll need to roll back to your current version, a backup will do wonders for your peace of mind in case something goes wrong.
 
@@ -136,7 +136,7 @@ Metabase will do all this automatically.
 
 If you need to downgrade after a major version upgrade, you'll either need to restore from a backup, or manually migrate to a lower version, otherwise Metabase may refuse to start (see the next section).
 
-During a **minor version upgrade** (e.g., 54.1 to 54.2), the new Metabase container or Jar will just work. Only in rare cases will it have to perform a migration, but, like with major version upgrades, Metabase will perform the migration automatically. And of course, you're backing up your application database each time you upgrade, right?
+During a **minor version upgrade** (e.g., 54.1 to 54.2), the new Metabase container or JAR will just work. Only in rare cases will it have to perform a migration, but, like with major version upgrades, Metabase will perform the migration automatically. And of course, you're backing up your application database each time you upgrade, right?
 
 ## Rolling back an upgrade or to an older version
 
@@ -185,4 +185,4 @@ If you're running Metabase in a cluster:
 2. Perform the upgrade as normal (as outlined above).
 3. Raise the number of nodes to the same number you had before.
 
-Make sure you container orchestrator or cluster manager doesn't kill the Metabase process while it's performing the migrations, otherwise you'll may end up with a corrupted application database and you'll need to restore from a backup.
+Make sure your container orchestrator or cluster manager doesn't kill the Metabase process while it's performing the migrations, otherwise you may end up with a corrupted application database and you'll need to restore from a backup.

@@ -323,7 +323,7 @@ describe("issue 51020", () => {
       dropTemporaryTable();
     });
 
-    it("should pass primary key attribute to execute action endpoint when it's populated with click behavior or URL (metabase#51020)", () => {
+    it("should pass primary key attribute to execute action endpoint when primary key is called 'id' and it's populated with click behavior or URL (metabase#51020)", () => {
       cy.log(
         "check when primary key parameter is populated with click behavior",
       );
@@ -381,15 +381,20 @@ describe("issue 51020", () => {
         .click();
       H.miniPickerBrowseAll().click();
       H.entityPickerModal().within(() => {
-        cy.findByPlaceholderText("Search…").type("foo");
+        /**
+         * Without this wait, typing speed causes flakiness: fast typing switches to search tab
+         * before picker content loads, so no folder is selected and "Everywhere" toggle doesn't appear.
+         */
+        cy.findByTestId("single-picker-view").should("be.visible");
+        cy.findByRole("searchbox").type("foo");
+        cy.findByText("Everywhere").click();
         cy.findByText("Foo").click();
       });
+
       cy.findByTestId("run-button").click();
       cy.wait("@dataset");
       cy.button("Save").click();
-      H.modal()
-        .findByLabelText("Name")
-        .type("{backspace}{backspace}{backspace}Model 51020");
+      H.modal().findByLabelText("Name").clear().type("Model 51020");
       H.modal().button("Save").click();
       cy.wait("@createCard");
       cy.wait("@getCard");
@@ -397,10 +402,9 @@ describe("issue 51020", () => {
 
       H.newButton("Question").click();
       H.miniPickerBrowseAll().click();
-      H.entityPickerModalTab("Data").click();
+      H.entityPickerModalItem(0, "Our analytics").click();
       H.entityPickerModalItem(1, "Model 51020").click();
       H.saveQuestion("Question 51020", undefined, {
-        tab: "Browse",
         path: ["Our analytics"],
       });
 
@@ -415,7 +419,7 @@ describe("issue 51020", () => {
       dropTemporaryTable();
     });
 
-    it("should pass primary key attribute to execute action endpoint when it's populated with click behavior or URL (metabase#51020)", () => {
+    it("should pass primary key attribute to execute action endpoint when primary key isn't called 'id' and it's populated with click behavior or URL (metabase#51020)", () => {
       cy.log(
         "check when primary key parameter is populated with click behavior",
       );
@@ -478,7 +482,7 @@ describe("issue 32840", () => {
   it("uses correct timestamp when executing implicit update action (metabase#32840)", () => {
     cy.findAllByTestId("cell-data").eq(8).click();
     H.modal().within(() => {
-      cy.findByText("July 19, 2023, 7:44 PM").should("be.visible");
+      cy.findByText("July 19, 2026, 7:44 PM").should("be.visible");
       cy.findByTestId("actions-menu").click();
     });
     H.popover().findByText("Update").should("be.visible").click();
@@ -487,12 +491,12 @@ describe("issue 32840", () => {
       .within(() => {
         cy.findByPlaceholderText("Created At").should(
           "have.value",
-          "2023-07-19T19:44:56",
+          "2026-07-19T19:44:56",
         );
         cy.button("Update").scrollIntoView().click();
       });
     cy.wait("@executeAction");
-    H.modal().findByText("July 19, 2023, 7:44 PM").should("be.visible");
+    H.modal().findByText("July 19, 2026, 7:44 PM").should("be.visible");
   });
 });
 
@@ -523,7 +527,7 @@ const actionButtonContainer = () =>
   cy.findByTestId("action-button-full-container");
 
 const dashCard = () =>
-  // eslint-disable-next-line no-unsafe-element-filtering
+  // eslint-disable-next-line metabase/no-unsafe-element-filtering
   cy
     .findAllByTestId("dashcard-container")
     .last()

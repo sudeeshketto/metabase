@@ -91,12 +91,17 @@
   can-read-setting?
   current-user-readable-visibilities
   custom-disabled-reasons!
+  db-stored-value
+  default-value
   defsetting
   disabled-for-db-reasons
+  env-var-name
   env-var-value
   export?
   get
   get-raw-value
+  get-raw-value-source
+  log-deprecated-env-var-usage!
   get-value-of-type
   has-advanced-setting-access?
   migrate-encrypted-settings!
@@ -118,6 +123,7 @@
   writable-settings]
  [metabase.settings.models.setting.cache
   cache-update-check-interval-ms
+  cache-last-updated-at
   restore-cache!]
  [metabase.settings.models.setting.multi-setting
   define-multi-setting

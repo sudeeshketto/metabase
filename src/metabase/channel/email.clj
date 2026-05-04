@@ -3,7 +3,7 @@
    [clojure.data :as data]
    [clojure.set :as set]
    [clojure.string :as str]
-   [metabase.analytics.core :as analytics]
+   [metabase.analytics-interface.core :as analytics]
    [metabase.channel.settings :as channel.settings]
    [metabase.permissions.core :as perms]
    [metabase.premium-features.core :as premium-features]
@@ -158,7 +158,8 @@
 (mu/defn send-email-retrying!
   "Like [[send-message-or-throw!]] but retries sending on errors according to the retry settings."
   [email :- EmailMessage]
-  ((retry/decorate send-message-or-throw!) email))
+  (retry/with-retry (retry/retry-configuration)
+    (send-message-or-throw! email)))
 
 (def ^:private SMTPStatus
   "Schema for the response returned by various functions in [[metabase.channel.email]]. Response will be a map with the key

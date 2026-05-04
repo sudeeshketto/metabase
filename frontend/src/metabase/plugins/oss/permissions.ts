@@ -1,33 +1,25 @@
 import type { ReactNode } from "react";
 
-import {
-  type DataPermission,
-  DataPermissionValue,
-  type DatabaseEntityId,
-  type EntityId,
-  type PermissionSubject,
+import type {
+  DatabaseEntityId,
+  EntityId,
+  PermissionSubject,
+  SpecialGroupType,
 } from "metabase/admin/permissions/types";
+import type { State } from "metabase/redux/store";
 import { getUserIsAdmin } from "metabase/selectors/user";
 import type Database from "metabase-lib/v1/metadata/Database";
 import type {
+  DataPermission,
   Dataset,
   Group,
   GroupPermissions,
   GroupsPermissions,
   User,
 } from "metabase-types/api";
-import type { State } from "metabase-types/store";
+import { DataPermissionValue } from "metabase-types/api";
 
 import type { PluginGroupManagersType } from "../types";
-
-// Types
-export interface UserWithApplicationPermissions extends User {
-  permissions?: {
-    can_access_monitoring: boolean;
-    can_access_setting: boolean;
-    can_access_subscription: boolean;
-  };
-}
 
 const getDefaultAdminPermissionsDatabaseRoutes = () => [];
 const getDefaultAdminPermissionsDatabaseGroupRoutes = () => [];
@@ -115,7 +107,7 @@ export const PLUGIN_DATA_PERMISSIONS: {
 const getDefaultAdminUserMenuItems = (): Array<
   (user: User) => React.ReactNode
 > => [];
-const getDefaultAdminUserMenuRoutes = () => [];
+const getDefaultAdminUserMenuRoutes = (): (() => React.ReactNode)[] => [];
 
 export const PLUGIN_ADMIN_USER_MENU_ITEMS = getDefaultAdminUserMenuItems();
 export const PLUGIN_ADMIN_USER_MENU_ROUTES = getDefaultAdminUserMenuRoutes();
@@ -140,18 +132,40 @@ const getDefaultAdvancedPermissions = () => ({
 export const PLUGIN_ADVANCED_PERMISSIONS = getDefaultAdvancedPermissions();
 
 const getDefaultFeatureLevelPermissions = () => ({
-  getFeatureLevelDataPermissions: (
-    _entityId: DatabaseEntityId,
-    _groupId: number,
-    _isAdmin: boolean,
-    _permissions: GroupsPermissions,
-    _dataAccessPermissionValue: DataPermissionValue,
-    _defaultGroup: Group,
-    _permissionSubject: PermissionSubject,
-  ) => {
+  getFeatureLevelDataPermissions: ({
+    entityId: _entityId,
+    groupId: _groupId,
+    groupType: _groupType,
+    permissions: _permissions,
+    dataAccessPermissionValue: _dataAccessPermissionValue,
+    defaultGroup: _defaultGroup,
+    permissionSubject: _permissionSubject,
+    permissionView: _permissionView,
+    showTransformPermissions: _showTransformPermissions,
+  }: {
+    entityId: DatabaseEntityId;
+    groupId: number;
+    groupType: SpecialGroupType;
+    permissions: GroupsPermissions;
+    dataAccessPermissionValue: DataPermissionValue;
+    defaultGroup: Group;
+    permissionSubject: PermissionSubject;
+    permissionView?: "group" | "database";
+    showTransformPermissions?: boolean;
+  }) => {
     return [] as any;
   },
-  getDataColumns: (_subject: PermissionSubject) => [] as any,
+  getDataColumns: ({
+    subject: _subject,
+    groupType: _groupType,
+    isExternal: _isExternal,
+    showTransformPermissions: _showTransformPermissions,
+  }: {
+    subject: PermissionSubject;
+    groupType?: SpecialGroupType;
+    isExternal?: boolean;
+    showTransformPermissions?: boolean;
+  }) => [] as any,
   getDownloadWidgetMessageOverride: (_result: Dataset): string | null => null,
   canDownloadResults: (_result: Dataset): boolean => true,
   canAccessDataModel: (state: State): boolean => getUserIsAdmin(state),
@@ -161,6 +175,13 @@ const getDefaultFeatureLevelPermissions = () => ({
 
 export const PLUGIN_FEATURE_LEVEL_PERMISSIONS =
   getDefaultFeatureLevelPermissions();
+
+const getDefaultAdminPermissionsTabs = () => ({
+  getRoutes: (): ReactNode => null,
+  tabs: [] as { name: string; value: string }[],
+});
+
+export const PLUGIN_ADMIN_PERMISSIONS_TABS = getDefaultAdminPermissionsTabs();
 
 const getDefaultApplicationPermissions = () => ({
   getRoutes: (): ReactNode => null,
@@ -258,6 +279,12 @@ export function reinitialize() {
     PLUGIN_FEATURE_LEVEL_PERMISSIONS,
     getDefaultFeatureLevelPermissions(),
   );
+
+  Object.assign(
+    PLUGIN_ADMIN_PERMISSIONS_TABS,
+    getDefaultAdminPermissionsTabs(),
+  );
+
   Object.assign(
     PLUGIN_APPLICATION_PERMISSIONS,
     getDefaultApplicationPermissions(),

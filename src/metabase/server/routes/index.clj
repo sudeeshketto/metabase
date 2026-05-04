@@ -11,10 +11,12 @@
    [metabase.initialization-status.core :as init-status]
    [metabase.settings.core :as setting]
    [metabase.system.core :as system]
+   [metabase.users.settings :as users-settings]
    [metabase.util.embed :as embed]
    [metabase.util.i18n :as i18n :refer [trs]]
    [metabase.util.json :as json]
    [metabase.util.log :as log]
+   [metabase.util.memoize :as memoize]
    [ring.util.response :as response]
    [stencil.core :as stencil])
   (:import
@@ -67,7 +69,7 @@
 (defn- load-inline-js* [resource-name]
   (slurp (io/resource (format "frontend_client/inline_js/%s.js" resource-name))))
 
-(def ^:private ^{:arglists '([resource-name])} load-inline-js (memoize load-inline-js*))
+(def ^:private ^{:arglists '([resource-name])} load-inline-js (memoize/memo load-inline-js*))
 
 (defn- load-template [path variables]
   (try
@@ -78,7 +80,7 @@
         (throw (Exception. message e))))))
 
 (defn- template-parameters
-  [entrypoint-name embeddable? {:keys [uri params nonce]}]
+  [embeddable? {:keys [uri params nonce]}]
   (let [{:keys [anon-tracking-enabled google-auth-client-id], :as public-settings} (setting/user-readable-values-map #{:public})
         ;; We disable `locale` parameter on static embeds/public links (metabase#50313)
         should-load-locale-params? (not embeddable?)]
@@ -89,6 +91,7 @@
      :siteLocalizationJSON   (escape-script (load-localization (system/site-locale)))
      :nonceJSON              (escape-script (json/encode nonce))
      :language               (hiccup.util/escape-html (or (i18n/user-locale-string) (system/site-locale)))
+     :userColorScheme        (escape-script (json/encode (users-settings/color-scheme)))
      :favicon                (hiccup.util/escape-html (let [custom-favicon (appearance/application-favicon-url)]
                                                         (if (and config/is-dev?
                                                                  (= custom-favicon "app/assets/img/favicon.ico"))
@@ -99,14 +102,12 @@
      :baseHref               (hiccup.util/escape-html (base-href))
      :embedCode              (when embeddable? (embed/head uri))
      :enableGoogleAuth       (boolean google-auth-client-id)
-     :enableAnonTracking     (boolean anon-tracking-enabled)
-     ;; (metabase#65533) color-scheme meta tag breaks EAJS because it has a transparent background.
-     :hasColorSchemeMetaTag  (not= entrypoint-name "embed-sdk")}))
+     :enableAnonTracking     (boolean anon-tracking-enabled)}))
 
 (defn- load-entrypoint-template [entrypoint-name embeddable? opts]
   (load-template
    (str "frontend_client/" entrypoint-name ".html")
-   (template-parameters entrypoint-name embeddable? opts)))
+   (template-parameters embeddable? opts)))
 
 (defn- load-init-template []
   (load-template

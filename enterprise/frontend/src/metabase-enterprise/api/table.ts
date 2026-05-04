@@ -1,69 +1,26 @@
 import type {
-  DiscardTablesValuesRequest,
-  EditTablesRequest,
-  PublishModelsRequest,
-  PublishModelsResponse,
-  RescanTablesValuesRequest,
-  SyncTablesSchemaRequest as SyncTablesSchemasRequest,
+  BulkTableSelection,
+  PublishTablesResponse,
 } from "metabase-types/api";
 
 import { EnterpriseApi } from "./api";
-import { invalidateTags, listTag, tag } from "./tags";
+import { invalidateTags, tag } from "./tags";
 
 export const tableApi = EnterpriseApi.injectEndpoints({
   endpoints: (builder) => ({
-    editTables: builder.mutation<Record<string, never>, EditTablesRequest>({
+    publishTables: builder.mutation<PublishTablesResponse, BulkTableSelection>({
       query: (body) => ({
         method: "POST",
-        url: "/api/ee/data-studio/table/edit",
+        url: "/api/ee/data-studio/table/publish-tables",
         body,
       }),
       invalidatesTags: (_, error) =>
-        invalidateTags(error, [tag("table"), tag("database"), tag("card")]),
+        invalidateTags(error, [tag("table"), tag("card"), tag("collection")]),
     }),
-    rescanTablesFieldValues: builder.mutation<void, RescanTablesValuesRequest>({
+    unpublishTables: builder.mutation<void, BulkTableSelection>({
       query: (body) => ({
         method: "POST",
-        url: `/api/ee/data-studio/table/rescan-values`,
-        body,
-      }),
-      invalidatesTags: (_, error) =>
-        invalidateTags(error, [tag("field-values"), tag("parameter-values")]),
-    }),
-    syncTablesSchemas: builder.mutation<void, SyncTablesSchemasRequest>({
-      query: (body) => ({
-        method: "POST",
-        url: `/api/ee/data-studio/table/sync-schema`,
-        body,
-      }),
-      invalidatesTags: (_, error) =>
-        invalidateTags(error, [
-          tag("table"),
-          listTag("field"),
-          listTag("field-values"),
-          listTag("parameter-values"),
-          tag("card"),
-        ]),
-    }),
-    discardTablesFieldValues: builder.mutation<
-      void,
-      DiscardTablesValuesRequest
-    >({
-      query: (body) => ({
-        method: "POST",
-        url: `/api/ee/data-studio/table/discard-values`,
-        body,
-      }),
-      invalidatesTags: (_, error) =>
-        invalidateTags(error, [tag("field-values"), tag("parameter-values")]),
-    }),
-    publishModels: builder.mutation<
-      PublishModelsResponse,
-      PublishModelsRequest
-    >({
-      query: (body) => ({
-        method: "POST",
-        url: "/api/ee/data-studio/table/publish-model",
+        url: "/api/ee/data-studio/table/unpublish-tables",
         body,
       }),
       invalidatesTags: (_, error) =>
@@ -72,10 +29,5 @@ export const tableApi = EnterpriseApi.injectEndpoints({
   }),
 });
 
-export const {
-  useEditTablesMutation,
-  useRescanTablesFieldValuesMutation,
-  useSyncTablesSchemasMutation,
-  useDiscardTablesFieldValuesMutation,
-  usePublishModelsMutation,
-} = tableApi;
+export const { usePublishTablesMutation, useUnpublishTablesMutation } =
+  tableApi;

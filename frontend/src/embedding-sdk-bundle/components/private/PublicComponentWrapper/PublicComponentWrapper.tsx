@@ -3,9 +3,10 @@ import { type ReactNode, forwardRef } from "react";
 import { PublicComponentStylesWrapper } from "embedding-sdk-bundle/components/private/PublicComponentStylesWrapper";
 import { SdkError } from "embedding-sdk-bundle/components/private/PublicComponentWrapper/SdkError";
 import { SdkLoader } from "embedding-sdk-bundle/components/private/PublicComponentWrapper/SdkLoader";
+import { useArePluginsReady } from "embedding-sdk-bundle/hooks/private/use-are-plugins-ready";
 import { useSdkSelector } from "embedding-sdk-bundle/store";
 import {
-  getLoginStatus,
+  getInitStatus,
   getUsageProblem,
 } from "embedding-sdk-bundle/store/selectors";
 import type { CommonStylingProps } from "embedding-sdk-bundle/types/props";
@@ -18,27 +19,33 @@ export const PublicComponentWrapper = forwardRef<
   HTMLDivElement,
   PublicComponentWrapperProps
 >(function PublicComponentWrapper({ children, className, style }, ref) {
-  const loginStatus = useSdkSelector(getLoginStatus);
+  const initStatus = useSdkSelector(getInitStatus);
   const usageProblem = useSdkSelector(getUsageProblem);
+  const pluginsReady = useArePluginsReady();
 
   let content = children;
 
   if (
-    loginStatus.status === "uninitialized" ||
-    loginStatus.status === "loading"
+    initStatus.status === "uninitialized" ||
+    initStatus.status === "loading"
   ) {
     content = <SdkLoader />;
   }
 
-  if (loginStatus.status === "error") {
+  if (initStatus.status === "error") {
     content = (
-      <SdkError message={loginStatus.error.message} error={loginStatus.error} />
+      <SdkError message={initStatus.error.message} error={initStatus.error} />
     );
   }
 
   // The SDK components should not load if there is a license error.
   if (usageProblem?.severity === "error") {
     content = null;
+  }
+
+  // Wait for EE plugins to be initialized before rendering children.
+  if (!pluginsReady && content === children) {
+    content = <SdkLoader />;
   }
 
   return (

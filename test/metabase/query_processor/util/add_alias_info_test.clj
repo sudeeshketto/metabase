@@ -814,7 +814,7 @@
                       lib/->legacy-MBQL
                       :query))))))))
 
-;;; adapted from [[metabase.query-processor-test.model-test/model-self-join-test]]
+;;; adapted from [[metabase.query-processor.model-test/model-self-join-test]]
 (deftest ^:parallel model-duplicate-joins-test
   (testing "Field references from model joined a second time can be resolved (#48639)"
     (let [mp    meta/metadata-provider
@@ -937,7 +937,7 @@
                                                {::add/source-alias "Reviews__CREATED_AT", ::add/desired-alias "Reviews__CREATED_AT"}]]]}
                       (-> expected :query :source-query (dissoc :source-query)))))))))))
 
-;;; adapted from [[metabase.query-processor-test.uuid-test/joined-uuid-query-test]]
+;;; adapted from [[metabase.query-processor.uuid-test/joined-uuid-query-test]]
 (deftest ^:parallel resolve-field-missing-join-alias-test
   (testing "should resolve broken refs missing join-alias correctly"
     (let [mp      lib.tu.uuid-dogs-metadata-provider/metadata-provider
@@ -1098,10 +1098,10 @@
                                    :condition    [:= $product-id &PRODUCTS__via__PRODUCT_ID.products.id]}]}))]
       (is (=? [[:expression {::add/source-table ::add/none, ::add/desired-alias "pivot-grouping"} "pivot-grouping"]
                [:expression {::add/source-table ::add/none, ::add/desired-alias "pivot-grouping"} "pivot-grouping"]]
-              (lib.util.match/match (-> query
-                                        add/add-alias-info
-                                        qp.preprocess/preprocess)
-                :expression))))))
+              (lib.util.match/match-many (-> query
+                                             add/add-alias-info
+                                             qp.preprocess/preprocess)
+                [:expression & _] &match))))))
 
 (deftest ^:parallel remapped-columns-in-joined-source-queries-test
   (testing "Make sure remapped columns are given correct aliases and escaped correctly for drivers like Oracle"
@@ -1163,6 +1163,12 @@
                                          :join-alias         "PRODUCTS__via__PRODUCT_ID"
                                          ::add/desired-alias "PRODUCTS__via__PRODUC_8b0b9fea"
                                          ::add/source-table  "PRODUCTS__via__PRODUCT_ID"}
+                                 any?]]
+                               [:asc {}
+                                [:field
+                                 {::add/source-alias "PRODUCT_ID",
+                                  ::add/desired-alias "PRODUCT_ID",
+                                  ::add/source-table (meta/id :orders)}
                                  any?]]]
                  :aggregation [[:sum {::add/source-table  ::add/none
                                       ::add/source-alias  "sum"
@@ -1265,7 +1271,7 @@
                 :stages
                 first)))))
 
-;;; see also [[metabase.driver.sql.query-processor-test/evil-field-ref-for-an-expression-test]]
+;;; see also [[metabase.driver.sql.query-processor.evil-field-ref-for-an-expression-test]]
 ;;; and [[metabase-enterprise.sandbox.query-processor.middleware.sandboxing-test/evil-field-ref-for-an-expression-test]]
 (deftest ^:parallel resolve-incorrect-field-ref-for-expression-test
   (testing "resolve the incorrect use of a :field ref for an expression correctly"
@@ -1315,3 +1321,97 @@
                   first
                   :filters
                   first))))))
+
+(deftest ^:parallel fallback-resolve-in-later-stage-with-join-alias-test
+  (testing "when generating fallback metadata from an earlier stage, include its :join-alias (#66464)"
+    (let [mp    (-> (lib.tu/metadata-provider-with-mock-card
+                     {:id            1
+                      :name          "Orders Model"
+                      :type          :model
+                      :dataset-query (lib/query meta/metadata-provider (meta/table-metadata :orders))})
+                    (lib.tu/metadata-provider-with-mock-card
+                     {:id            2
+                      :name          "Products Model"
+                      :type          :model
+                      :dataset-query (lib/query meta/metadata-provider (meta/table-metadata :products))}))
+          query (-> (lib/query mp (lib.metadata/card mp 1))
+                    (lib/join (lib/join-clause (lib.metadata/card mp 2)))
+                    ;; Deliberately using field IDs rather than names here, and to tables that are not otherwise part
+                    ;; of this query. Some Metrics v2 queries in the wild look like this and we're trying not to break
+                    ;; them; see #66464.
+                    (lib/aggregate (lib// (lib/distinct-where (meta/field-metadata :orders :user-id)
+                                                              (-> (meta/field-metadata :people :name)
+                                                                  lib/ref
+                                                                  (lib/with-join-alias "Products Model - Product")
+                                                                  lib/not-null))
+                                          (lib/distinct (meta/field-metadata :orders :user-id)))))]
+      (is (=? [:/ {}
+               ;; numerator
+               [:distinct-where {}
+                vector?
+                [:!= {}
+                 [:field {:join-alias         "Products Model - Product"
+                          ::add/source-table  "Products Model - Product"
+                          ::add/source-alias  "NAME"
+                          ::add/desired-alias nil}
+                  (meta/id :people :name)]
+                 [:value {} nil]]]
+               ;; denominator
+               [:distinct {} vector?]]
+              (-> (add-alias-info query)
+                  lib/aggregations
+                  first))))))
+
+(deftest ^:parallel inherited-temporal-unit-mismatch-in-nested-model-test
+  (testing "Breakout on a joined DateTime column in a nested model gets a ::desired-alias even when
+            :inherited-temporal-unit differs between field ref and returned column (#70231)"
+    (let [mp (lib.tu/mock-metadata-provider
+              meta/metadata-provider
+              ;; Model 1: orders joined with products, producing "Products__CREATED_AT"
+              {:cards [{:id            1
+                        :dataset-query (-> (lib/query meta/metadata-provider
+                                                      (lib.metadata/table meta/metadata-provider (meta/id :orders)))
+                                           (lib/join (lib/join-clause
+                                                      (lib.metadata/table meta/metadata-provider (meta/id :products))
+                                                      [(lib/= (lib.metadata/field meta/metadata-provider (meta/id :orders :product-id))
+                                                              (lib.metadata/field meta/metadata-provider (meta/id :products :id)))]))
+                                           lib/->legacy-MBQL)
+                        :database-id   (meta/id)
+                        :name          "Orders+Products"
+                        :type          :model}]})
+          ;; Model 2: queries model 1 with a breakout on Products__CREATED_AT bucketed by :day,
+          ;; plus an aggregation.
+          model-2-query (as-> (lib/query mp (lib.metadata/card mp 1)) $q
+                          (lib/breakout $q (-> (m/find-first (comp #{"Products__CREATED_AT"} :lib/source-column-alias)
+                                                             (lib/breakoutable-columns $q))
+                                               (lib/with-temporal-bucket :day)))
+                          (lib/aggregate $q (lib/count)))
+          ;; Inject stale :inherited-temporal-unit into the breakout field ref, simulating a card
+          ;; saved when the source column had :minute granularity.
+          ;; Legacy field refs are [:field name-or-id opts-map].
+          model-2-query (lib/update-query-stage
+                         model-2-query -1
+                         assoc-in [:breakouts 0 1 :inherited-temporal-unit] :minute)
+          mp (lib.tu/mock-metadata-provider
+              mp
+              {:cards [{:id            2
+                        :dataset-query model-2-query
+                        :database-id   (meta/id)
+                        :name          "Orders+Products Summary"
+                        :type          :model}]})
+          ;; Top-level query on model 2 — flattens stages and triggers the mismatch
+          query (lib/query mp (lib.metadata/card mp 2))]
+      (qp.store/with-metadata-provider mp
+        (driver/with-driver :h2
+          (let [with-aliases (-> query qp.preprocess/preprocess add/add-alias-info)
+                ;; The breakout lives in the inner flattened stage (from model 2)
+                breakout-stage (->> (:stages with-aliases)
+                                    (m/find-first :breakout))
+                created-at-brk (->> (:breakout breakout-stage)
+                                    (m/find-first (fn [[_tag _opts col-ref]]
+                                                    (and (string? col-ref)
+                                                         (str/includes? col-ref "CREATED_AT")))))]
+            (testing "breakout on joined CREATED_AT has non-nil ::add/desired-alias"
+              ;; Before the fix, ::add/desired-alias was nil because lib.equality/= failed
+              ;; due to :inherited-temporal-unit mismatch (:minute vs :day).
+              (is (some? (::add/desired-alias (second created-at-brk)))))))))))

@@ -1,5 +1,9 @@
-import MetabaseSettings from "metabase/lib/settings";
 import { loadSettings } from "metabase/redux/settings";
+import {
+  isValidColorScheme,
+  setUserColorSchemeAfterUpdate,
+} from "metabase/utils/color-scheme";
+import MetabaseSettings from "metabase/utils/settings";
 import type {
   EnterpriseSettings,
   PasswordResetTokenStatus,
@@ -7,6 +11,8 @@ import type {
 
 import { Api } from "./api";
 import { handleQueryFulfilled } from "./utils/lifecycle";
+
+export const sessionPropertiesPath = "/api/session/properties";
 
 export const sessionApi = Api.injectEndpoints({
   endpoints: (builder) => ({
@@ -30,7 +36,7 @@ export const sessionApi = Api.injectEndpoints({
     getSessionProperties: builder.query<EnterpriseSettings, void>({
       query: () => ({
         method: "GET",
-        url: "/api/session/properties",
+        url: sessionPropertiesPath,
       }),
       providesTags: ["session-properties"],
       onQueryStarted: (_, { queryFulfilled, dispatch }) =>
@@ -38,6 +44,14 @@ export const sessionApi = Api.injectEndpoints({
           dispatch(loadSettings(data));
           // compatibility layer for legacy settings on the window object
           MetabaseSettings.setAll(data);
+
+          // Sync color-scheme setting to window.MetabaseUserColorScheme
+          if (
+            data["color-scheme"] &&
+            isValidColorScheme(data["color-scheme"])
+          ) {
+            setUserColorSchemeAfterUpdate(data["color-scheme"]);
+          }
         }),
     }),
   }),

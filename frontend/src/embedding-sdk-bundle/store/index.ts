@@ -1,14 +1,10 @@
 import { type Reducer, combineReducers } from "@reduxjs/toolkit";
 import { useContext } from "react";
 
-import {
-  MetabaseReduxContext,
-  useDispatch,
-  useStore,
-} from "metabase/lib/redux";
-import { PLUGIN_REDUCERS } from "metabase/plugins";
+import * as pulse from "metabase/notifications/pulse/reducers";
 import * as qb from "metabase/query_builder/reducers";
 import { commonReducers } from "metabase/reducers-common";
+import { metabaseReduxContext, useDispatch, useStore } from "metabase/redux";
 import { DEFAULT_EMBEDDING_ENTITY_TYPES } from "metabase/redux/embedding-data-picker";
 import { getStore } from "metabase/store";
 import { reducer as visualizer } from "metabase/visualizer/visualizer.slice";
@@ -18,12 +14,10 @@ import type { SdkDispatch, SdkStore } from "./types";
 
 export const sdkReducers = {
   ...commonReducers,
+  pulse: combineReducers(pulse),
   qb: combineReducers(qb),
   visualizer,
   sdk,
-  plugins: combineReducers({
-    metabotPlugin: PLUGIN_REDUCERS.metabotPlugin,
-  }),
 } as unknown as Record<string, Reducer>;
 
 export const getSdkStore = () =>
@@ -51,11 +45,11 @@ export const useSdkStore = () => {
 };
 
 const useCheckSdkReduxContext = () => {
-  const context = useContext(MetabaseReduxContext);
+  const context = useContext(metabaseReduxContext);
 
   if (!context) {
     console.warn(
-      // eslint-disable-next-line no-literal-metabase-strings -- not UI string
+      // eslint-disable-next-line metabase/no-literal-metabase-strings -- not UI string
       "Cannot find react-redux context. Make sure component or hook is wrapped into MetabaseProvider",
     );
   }

@@ -1,7 +1,7 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Form, FormProvider } from "metabase/forms";
-import { useSelector } from "metabase/lib/redux";
+import { useSelector } from "metabase/redux";
 import type { DatabaseData, EngineKey } from "metabase-types/api";
 
 import { getEngines } from "../../selectors";
@@ -10,6 +10,7 @@ import { getSubmitValues, getValidationSchema } from "../../utils/schema";
 
 import { DatabaseFormBody } from "./DatabaseFormBody";
 import { DatabaseFormFooter } from "./DatabaseFormFooter";
+import { FormDirtyStateProvider } from "./context";
 import { getEngine, getEngineKey } from "./utils";
 
 export type EngineFieldState = "default" | "hidden" | "disabled";
@@ -37,7 +38,7 @@ interface DatabaseFormProps {
   onSubmit?: (values: DatabaseData) => void;
   onEngineChange?: (engineKey: string | undefined) => void;
   onCancel?: () => void;
-  setIsDirty?: (isDirty: boolean) => void;
+  onDirtyStateChange?: (isDirty: boolean) => void;
   config?: DatabaseFormConfig;
   location: FormLocation;
   /**
@@ -54,17 +55,18 @@ export const DatabaseForm = ({
   onSubmit,
   onCancel,
   onEngineChange,
-  setIsDirty,
+  onDirtyStateChange,
   location,
   showSampleDatabase = false,
   ContinueWithoutDataSlot,
   config = {},
 }: DatabaseFormProps): JSX.Element => {
   const isAdvanced = config.isAdvanced || false;
-  const engineFieldState = config.engine?.fieldState;
 
   const engines = useSelector(getEngines);
-  const initialEngineKey = getEngineKey(engines, initialData, isAdvanced);
+  const initialEngineKey = useMemo(() => {
+    return getEngineKey(engines, initialData, isAdvanced);
+  }, [engines, initialData, isAdvanced]);
   const [engineKey, setEngineKey] = useState(initialEngineKey);
   const engine = getEngine(engines, engineKey);
 
@@ -78,6 +80,11 @@ export const DatabaseForm = ({
       { stripUnknown: true },
     );
   }, [initialData, engineKey, validationSchema]);
+
+  useEffect(() => {
+    // during page load, if initialData changes, initialEngineKey will also change
+    setEngineKey(initialEngineKey);
+  }, [initialEngineKey]);
 
   const handleSubmit = useCallback(
     (values: DatabaseData) => {
@@ -104,28 +111,33 @@ export const DatabaseForm = ({
       <Form
         data-testid="database-form"
         pt={location === "full-page" ? undefined : "md"}
+        mih={0}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+        }}
       >
-        <DatabaseFormBody
-          engine={engine}
-          // casting won't be needed after migrating all usages of engineKey
-          engineKey={engineKey as EngineKey}
-          engines={engines}
-          engineFieldState={engineFieldState}
-          autofocusFieldName={autofocusFieldName}
-          isAdvanced={isAdvanced}
-          onEngineChange={handleEngineChange}
-          setIsDirty={setIsDirty}
-          config={config}
-          showSampleDatabase={showSampleDatabase}
-          location={location}
-        />
-        <DatabaseFormFooter
-          ContinueWithoutDataSlot={ContinueWithoutDataSlot}
-          isAdvanced={isAdvanced}
-          location={location}
-          onCancel={onCancel}
-          showSampleDatabase={showSampleDatabase}
-        />
+        <FormDirtyStateProvider onDirtyStateChange={onDirtyStateChange}>
+          <DatabaseFormBody
+            engine={engine}
+            // casting won't be needed after migrating all usages of engineKey
+            engineKey={engineKey as EngineKey}
+            engines={engines}
+            autofocusFieldName={autofocusFieldName}
+            isAdvanced={isAdvanced}
+            onEngineChange={handleEngineChange}
+            config={config}
+            showSampleDatabase={showSampleDatabase}
+            location={location}
+          />
+          <DatabaseFormFooter
+            ContinueWithoutDataSlot={ContinueWithoutDataSlot}
+            isAdvanced={isAdvanced}
+            location={location}
+            onCancel={onCancel}
+            showSampleDatabase={showSampleDatabase}
+          />
+        </FormDirtyStateProvider>
       </Form>
     </FormProvider>
   );

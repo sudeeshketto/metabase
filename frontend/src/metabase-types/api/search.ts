@@ -1,10 +1,16 @@
 import type { UserId } from "metabase-types/api/user";
 
 import type { CardId } from "./card";
-import type { Collection, CollectionId, LastEditInfo } from "./collection";
+import type {
+  Collection,
+  CollectionId,
+  CollectionNamespace,
+  LastEditInfo,
+} from "./collection";
 import type { Dashboard, DashboardId } from "./dashboard";
 import type { DatabaseId, InitialSyncStatus } from "./database";
 import type { Field } from "./field";
+import type { MeasureId } from "./measure";
 import type { ModerationReviewStatus } from "./moderation";
 import type { PaginationRequest, PaginationResponse } from "./pagination";
 import type { FieldReference } from "./query";
@@ -17,6 +23,7 @@ const ENABLED_SEARCH_MODELS = [
   "card",
   "dataset",
   "metric",
+  "measure",
   "database",
   "table",
   "action",
@@ -54,7 +61,7 @@ export type SearchResponse<
 
 export type CollectionEssentials = Pick<
   Collection,
-  "id" | "name" | "authority_level" | "type"
+  "id" | "name" | "authority_level" | "type" | "archived"
 > &
   Partial<Pick<Collection, "effective_ancestors">>;
 
@@ -63,7 +70,8 @@ export type SearchResultId =
   | CardId
   | DatabaseId
   | TableId
-  | DashboardId;
+  | DashboardId
+  | MeasureId;
 
 export interface SearchResult<
   Id extends SearchResultId = SearchResultId,
@@ -97,6 +105,7 @@ export interface SearchResult<
   model_index_id: number | null;
   table_description: string | null;
   table_name: string | null;
+  table_display_name: string | null;
   initial_sync_status: InitialSyncStatus | null;
   dashboard_count: number | null;
   context: any; // this might be a dead property
@@ -142,6 +151,6 @@ export type SearchRequest = {
 
   // this should be in ListCollectionItemsRequest but legacy code expects them here
   collection?: CollectionId;
-  namespace?: "snippets";
+  namespace?: CollectionNamespace;
   calculate_available_models?: true;
 } & PaginationRequest;

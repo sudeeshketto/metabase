@@ -8,16 +8,15 @@ import {
   useGetDatabaseQuery,
   useListDatabasesQuery,
 } from "metabase/api";
-import { color } from "metabase/lib/colors";
-import { createEntity, entityCompatibleQuery } from "metabase/lib/entities";
-import { createThunkAction, fetchData } from "metabase/lib/redux";
-import * as Urls from "metabase/lib/urls";
+import { createThunkAction } from "metabase/redux";
 import { DatabaseSchema } from "metabase/schema";
 import {
   getMetadata,
   getMetadataUnfiltered,
 } from "metabase/selectors/metadata";
 import { isVirtualCardId } from "metabase-lib/v1/metadata/utils/saved-questions";
+
+import { createEntity, entityCompatibleQuery, fetchData } from "./utils";
 
 // OBJECT ACTIONS
 export const FETCH_DATABASE_METADATA =
@@ -26,7 +25,7 @@ export const FETCH_DATABASE_METADATA =
 /**
  * @deprecated use "metabase/api" instead
  */
-const Databases = createEntity({
+export const Databases = createEntity({
   name: "databases",
   path: "/api/database",
   schema: DatabaseSchema,
@@ -34,7 +33,7 @@ const Databases = createEntity({
   nameOne: "database",
   nameMany: "databases",
 
-  rtk: {
+  rtk: () => ({
     getUseGetQuery: (fetchType) => {
       if (fetchType === "fetchDatabaseMetadata") {
         return {
@@ -47,7 +46,7 @@ const Databases = createEntity({
       };
     },
     useListQuery: useListDatabasesQuery,
-  },
+  }),
 
   api: {
     list: (entityQuery, dispatch) =>
@@ -108,13 +107,6 @@ const Databases = createEntity({
     ),
   },
 
-  objectSelectors: {
-    getName: (db) => db && db.name,
-    getUrl: (db) => db && Urls.browseDatabase(db),
-    getIcon: (db) => ({ name: "database" }),
-    getColor: (db) => color("database"),
-  },
-
   selectors: {
     getObject: (state, { entityId }) => getMetadata(state).database(entityId),
 
@@ -147,5 +139,3 @@ const Databases = createEntity({
     ),
   },
 });
-
-export default Databases;

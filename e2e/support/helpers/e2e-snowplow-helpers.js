@@ -1,6 +1,6 @@
 import { updateSetting } from "e2e/support/helpers";
 
-const SNOWPLOW_URL = Cypress.env("SNOWPLOW_MICRO_URL");
+const SNOWPLOW_URL = "http://localhost:9090";
 const SNOWPLOW_INTERVAL = 100;
 const SNOWPLOW_TIMEOUT = 1000;
 
@@ -127,11 +127,18 @@ const retrySnowplowRequest = (
         timeout - SNOWPLOW_INTERVAL,
       );
     } else {
-      const message =
+      let message =
         typeof messageOrMessageFn === "function"
           ? messageOrMessageFn(response)
           : messageOrMessageFn;
-      throw new Error("Snowplow retry timeout " + message);
+
+      if (!message) {
+        message =
+          "Response body (trimmed): " +
+          JSON.stringify(response.body)?.slice(0, 512);
+      }
+
+      throw new Error("Snowplow retry timeout: " + message);
     }
   });
 };

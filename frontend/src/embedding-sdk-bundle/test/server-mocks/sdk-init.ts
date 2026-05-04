@@ -9,6 +9,10 @@ import {
   createMockLoginStatusState,
   createMockSdkState,
 } from "embedding-sdk-bundle/test/mocks/state";
+import {
+  createMockEmbedState,
+  createMockState,
+} from "metabase/redux/store/mocks";
 import type {
   EnterpriseSettings,
   SettingDefinition,
@@ -20,10 +24,6 @@ import {
   createMockTokenFeatures,
   createMockUser,
 } from "metabase-types/api/mocks";
-import {
-  createMockEmbedState,
-  createMockState,
-} from "metabase-types/store/mocks";
 
 export const setupSdkState = ({
   currentUser = createMockUser(),
@@ -31,19 +31,19 @@ export const setupSdkState = ({
   tokenFeatures = createMockTokenFeatures({ embedding_sdk: true }),
   settingDefinitions = [],
   sdkState = createMockSdkState({
-    loginStatus: createMockLoginStatusState({ status: "success" }),
+    initStatus: createMockLoginStatusState({ status: "success" }),
   }),
   ...stateOpts
 }: {
   currentUser?: User;
   settingValues?: EnterpriseSettings;
-  tokenFeatures?: TokenFeatures;
+  tokenFeatures?: Partial<TokenFeatures>;
   settingDefinitions?: SettingDefinition[];
   sdkState?: SdkState;
 } & Partial<SdkStoreState> = {}) => {
   const settingValuesWithToken = {
     ...settingValues,
-    "token-features": tokenFeatures,
+    "token-features": createMockTokenFeatures(tokenFeatures),
   };
 
   setupCurrentUserEndpoint(currentUser);

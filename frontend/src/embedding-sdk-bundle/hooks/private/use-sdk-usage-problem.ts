@@ -1,9 +1,14 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import { printUsageProblemToConsole } from "embedding-sdk-bundle/lib/print-usage-problem";
 import { getSdkUsageProblem } from "embedding-sdk-bundle/lib/usage-problem";
 import { useSdkDispatch, useSdkSelector } from "embedding-sdk-bundle/store";
 import { setUsageProblem } from "embedding-sdk-bundle/store/reducer";
+import {
+  getHasTokenFeature,
+  getIsGuestEmbedRaw,
+  getUsageProblem,
+} from "embedding-sdk-bundle/store/selectors";
 import type { MetabaseAuthConfig } from "embedding-sdk-bundle/types/auth-config";
 import { useSetting } from "metabase/common/hooks";
 import { EMBEDDING_SDK_CONFIG } from "metabase/embedding-sdk/config";
@@ -21,6 +26,8 @@ export function useSdkUsageProblem({
   session: MetabaseEmbeddingSessionToken | null;
   isLocalHost?: boolean;
 }) {
+  const isGuestEmbed = useSdkSelector(getIsGuestEmbedRaw);
+
   const hasLoggedRef = useRef(false);
 
   const dispatch = useSdkDispatch();
@@ -31,15 +38,7 @@ export function useSdkUsageProblem({
   const isEnabled =
     useSetting(EMBEDDING_SDK_CONFIG.enableEmbeddingSettingKey) ?? true;
 
-  const hasTokenFeature = useSdkSelector((state) => {
-    // We also assume that the feature is enabled if the token-features are missing.
-    // Same reason as above.
-    if (!state.settings.values?.["token-features"]) {
-      return true;
-    }
-
-    return getTokenFeature(state, EMBEDDING_SDK_CONFIG.tokenFeatureKey);
-  });
+  const hasTokenFeature = useSdkSelector(getHasTokenFeature);
 
   const isDevelopmentMode = useSdkSelector((state) => {
     // Assume that we are not in development mode until the setting is loaded
@@ -50,28 +49,40 @@ export function useSdkUsageProblem({
     return getTokenFeature(state, "development_mode");
   });
 
-  const usageProblem = useMemo(() => {
-    return getSdkUsageProblem({
-      authConfig,
-      hasTokenFeature,
-      isEnabled,
-      isDevelopmentMode,
-      session,
-      isLocalHost,
-    });
+  // Sync the computed usage problem to the store whenever inputs change.
+  // This lets other consumers (e.g. SDK components that stop rendering on
+  // license errors) read the problem from the store.
+  useEffect(() => {
+    dispatch(
+      setUsageProblem(
+        getSdkUsageProblem({
+          isGuestEmbed,
+          authConfig,
+          hasTokenFeature,
+          isEnabled,
+          isDevelopmentMode,
+          session,
+          isLocalHost,
+        }),
+      ),
+    );
   }, [
+    isGuestEmbed,
     authConfig,
     hasTokenFeature,
     isEnabled,
     isDevelopmentMode,
     session,
     isLocalHost,
+    dispatch,
   ]);
 
-  useEffect(() => {
-    // SDK components will stop rendering if a license error is detected.
-    dispatch(setUsageProblem(usageProblem));
+  // Read the problem from the store rather than from a local useMemo so that
+  // external dispatches (e.g. the "Hide" button calling setUsageProblem(null))
+  // are reflected here.
+  const usageProblem = useSdkSelector(getUsageProblem);
 
+  useEffect(() => {
     // Log the problem to the console once.
     if (!hasLoggedRef.current && allowConsoleLog) {
       printUsageProblemToConsole(usageProblem);

@@ -15,7 +15,11 @@ module.exports = {
     "^Components/overlays/Tooltip",
     "^Components/Documents",
     "^Components/Feedback/Alert",
+    "^Components/Table",
     "^App/Palette",
+    "^EmbeddingSDK/SdkQuestion/ChartTypeDropdownInner",
+    "^viz/GridMapPdfExport",
+    "ParameterValueWidget",
   ].join("|"),
   configurations: {
     "chrome.laptop": {

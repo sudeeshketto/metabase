@@ -2,7 +2,7 @@
 
 import userEvent from "@testing-library/user-event";
 
-import { setupEnterprisePlugins } from "__support__/enterprise";
+import { setupEnterpriseOnlyPlugin } from "__support__/enterprise";
 import {
   setupNotificationChannelsEndpoints,
   setupUserRecipientsEndpoint,
@@ -12,8 +12,13 @@ import { setupWebhookChannelsEndpoint } from "__support__/server-mocks/channel";
 import { setupListNotificationEndpoints } from "__support__/server-mocks/notification";
 import { mockSettings } from "__support__/settings";
 import { renderWithProviders, screen } from "__support__/ui";
-import { useSelector } from "metabase/lib/redux";
-import { checkNotNull } from "metabase/lib/types";
+import { useSelector } from "metabase/redux";
+import type { DashboardState } from "metabase/redux/store/dashboard";
+import {
+  createMockDashboardState,
+  createMockState,
+} from "metabase/redux/store/mocks";
+import { checkNotNull } from "metabase/utils/types";
 import Question from "metabase-lib/v1/Question";
 import type { Card, Dashboard, Notification, User } from "metabase-types/api";
 import {
@@ -24,7 +29,6 @@ import {
   createMockTokenFeatures,
   createMockUser,
 } from "metabase-types/api/mocks";
-import { createMockState } from "metabase-types/store/mocks";
 
 import { DashboardSharingMenu } from "../DashboardSharingMenu";
 import { QuestionSharingMenu } from "../QuestionSharingMenu";
@@ -49,6 +53,7 @@ type SettingsProps = {
   canManageSubscriptions?: boolean;
   isEnterprise?: boolean;
   card?: Card;
+  dashboardState?: Partial<DashboardState>;
 };
 
 const setupState = ({
@@ -60,6 +65,7 @@ const setupState = ({
   canManageSubscriptions = false,
   isEnterprise = false,
   card,
+  dashboardState,
 }: SettingsProps) => {
   const tokenFeatures = createMockTokenFeatures({
     advanced_permissions: isEnterprise,
@@ -95,6 +101,7 @@ const setupState = ({
         card,
       },
     } as User,
+    dashboard: createMockDashboardState(dashboardState),
   });
 
   return state;
@@ -110,6 +117,7 @@ export function setupDashboardSharingMenu({
   isEnterprise = false,
   hasPublicLink = false,
   dashboard: dashboardOverrides = {},
+  dashboardState,
 }: {
   dashboard?: Partial<Dashboard>;
   hasPublicLink?: boolean;
@@ -133,10 +141,13 @@ export function setupDashboardSharingMenu({
     isAdmin,
     canManageSubscriptions,
     isEnterprise,
+    dashboardState,
   });
 
   if (isEnterprise) {
-    setupEnterprisePlugins();
+    setupEnterpriseOnlyPlugin("audit_app");
+    setupEnterpriseOnlyPlugin("application_permissions");
+    setupEnterpriseOnlyPlugin("collections");
   }
 
   renderWithProviders(
@@ -191,7 +202,9 @@ export function setupQuestionSharingMenu({
   setupWebhookChannelsEndpoint();
 
   if (isEnterprise) {
-    setupEnterprisePlugins();
+    setupEnterpriseOnlyPlugin("audit_app");
+    setupEnterpriseOnlyPlugin("application_permissions");
+    setupEnterpriseOnlyPlugin("collections");
   }
 
   renderWithProviders(

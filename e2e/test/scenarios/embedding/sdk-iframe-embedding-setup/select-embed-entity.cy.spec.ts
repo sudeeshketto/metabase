@@ -1,9 +1,13 @@
+import { SAMPLE_DATABASE } from "e2e/support/cypress_sample_database";
 import {
   ORDERS_BY_YEAR_QUESTION_ID,
   ORDERS_COUNT_QUESTION_ID,
   ORDERS_DASHBOARD_ID,
 } from "e2e/support/cypress_sample_instance_data";
-import { mockEmbedJsToDevServer } from "e2e/support/helpers";
+import {
+  embedModalEnableEmbedding,
+  mockEmbedJsToDevServer,
+} from "e2e/support/helpers";
 
 import {
   getEmbedSidebar,
@@ -26,7 +30,7 @@ describe(suiteTitle, () => {
     H.restore();
     H.resetSnowplow();
     cy.signInAsAdmin();
-    H.activateToken("bleeding-edge");
+    H.activateToken("pro-self-hosted");
     H.enableTracking();
     H.updateSetting("enable-embedding-simple", true);
 
@@ -41,7 +45,7 @@ describe(suiteTitle, () => {
     H.expectNoBadSnowplowEvents();
   });
 
-  it("tracks 'default' when keeping the default dashboard selection", () => {
+  it("tracks event details with `isDefaultResource=true` when keeping the default dashboard selection", () => {
     visitNewEmbedPage();
 
     getEmbedSidebar().within(() => {
@@ -55,11 +59,12 @@ describe(suiteTitle, () => {
 
     H.expectUnstructuredSnowplowEvent({
       event: "embed_wizard_resource_selection_completed",
-      event_detail: "default",
+      event_detail: "isDefaultResource=true,experience=dashboard",
     });
   });
 
-  it("tracks 'custom' when selecting a different dashboard", () => {
+  it("tracks event details with `isDefaultResource=false` when selecting a different dashboard", () => {
+    cy.intercept("GET", "api/preview_embed/dashboard/*").as("previewEmbed");
     cy.log("add two dashboards to activity log");
 
     H.createDashboard({ name: SECOND_DASHBOARD_NAME }).then(
@@ -76,17 +81,22 @@ describe(suiteTitle, () => {
       cy.findByText("Next").click();
       cy.findByText("Select a dashboard to embed").should("be.visible");
 
-      cy.log("first dashboard should be selected by default");
+      // see the "shows recently created dashboard at the top of the list (EMB-1179)"
+      // test below for why we prioritize new dashboards
+      cy.log(
+        "recently created dashboard should be selected by default (EMB-1179)",
+      );
       getRecentItemCards()
         .should("have.length", 2)
         .first()
+        .should("contain", SECOND_DASHBOARD_NAME)
         .should("have.attr", "data-selected", "true");
 
       cy.findByText(FIRST_DASHBOARD_NAME).should("be.visible");
       cy.findByText(SECOND_DASHBOARD_NAME).should("be.visible");
 
-      cy.log("second dashboard can be selected");
-      cy.findByText(SECOND_DASHBOARD_NAME).click();
+      cy.log("a different dashboard can be selected");
+      cy.findByText(FIRST_DASHBOARD_NAME).click();
 
       getRecentItemCards().eq(1).should("have.attr", "data-selected", "true");
     });
@@ -94,14 +104,23 @@ describe(suiteTitle, () => {
     cy.log("selected dashboard should be shown in the preview");
     cy.wait("@dashboard");
     H.getSimpleEmbedIframeContent().within(() => {
-      cy.findByText(SECOND_DASHBOARD_NAME).should("be.visible");
+      cy.findByText(FIRST_DASHBOARD_NAME).should("be.visible");
+    });
+
+    cy.log(
+      'Embed preview requests should not have "X-Metabase-Client" header (EMB-945)',
+    );
+    cy.wait("@previewEmbed").then(({ request }) => {
+      expect(request?.headers?.["x-metabase-embedded-preview"]).to.equal(
+        "true",
+      );
     });
 
     getEmbedSidebar().findByText("Next").click();
 
     H.expectUnstructuredSnowplowEvent({
       event: "embed_wizard_resource_selection_completed",
-      event_detail: "custom",
+      event_detail: "isDefaultResource=false,experience=dashboard",
     });
   });
 
@@ -136,12 +155,11 @@ describe(suiteTitle, () => {
 
       H.expectUnstructuredSnowplowEvent({
         event: "embed_wizard_resource_selection_completed",
-        event_detail: "custom",
+        event_detail: "isDefaultResource=false,experience=chart",
       });
     });
 
     cy.log("selected question should be shown in the preview");
-    cy.wait("@cardQuery");
     H.getSimpleEmbedIframeContent().within(() => {
       cy.findByText(SECOND_QUESTION_NAME).should("be.visible");
     });
@@ -162,7 +180,7 @@ describe(suiteTitle, () => {
 
     H.entityPickerModal().within(() => {
       cy.findByText("Select a dashboard").should("be.visible");
-      cy.findByText("Dashboards").click();
+      cy.findByText("Our analytics").click();
       cy.findByText(SECOND_DASHBOARD_NAME).click();
     });
 
@@ -192,7 +210,7 @@ describe(suiteTitle, () => {
 
     H.entityPickerModal().within(() => {
       cy.findByText("Select a chart").should("be.visible");
-      cy.findByText("Questions").click();
+      cy.findByText("Our analytics").click();
       cy.findByText(FIRST_QUESTION_NAME).click();
     });
 
@@ -209,10 +227,9 @@ describe(suiteTitle, () => {
 
     H.expectUnstructuredSnowplowEvent({
       event: "embed_wizard_resource_selection_completed",
-      event_detail: "custom",
+      event_detail: "isDefaultResource=false,experience=chart",
     });
 
-    cy.wait("@cardQuery");
     H.getSimpleEmbedIframeContent().within(() => {
       cy.findByText(FIRST_QUESTION_NAME).should("be.visible");
     });
@@ -220,6 +237,12 @@ describe(suiteTitle, () => {
 
   it("can search and select a collection for browser", () => {
     visitNewEmbedPage();
+
+    getEmbedSidebar().within(() => {
+      cy.findByLabelText("Metabase account (SSO)").click();
+    });
+
+    embedModalEnableEmbedding();
 
     getEmbedSidebar().within(() => {
       cy.findByText("Browser").click();
@@ -257,6 +280,14 @@ describe(suiteTitle, () => {
       cy.intercept("GET", "/api/activity/recents?*", {
         recents: [],
       }).as("emptyRecentItems");
+
+      // The embed wizard calls the search API to find recently created
+      // dashboards. Without this, the snapshot's admin-owned dashboards
+      // would be returned and selected as the default.
+      cy.log("simulate that there are no recently created dashboards");
+      cy.intercept("GET", "/api/search?*", { data: [], total: 0 }).as(
+        "emptySearch",
+      );
 
       visitNewEmbedPage();
       cy.wait("@emptyRecentItems");
@@ -303,6 +334,12 @@ describe(suiteTitle, () => {
 
     it("can open a collection picker from browser empty state", () => {
       getEmbedSidebar().within(() => {
+        cy.findByLabelText("Metabase account (SSO)").click();
+      });
+
+      embedModalEnableEmbedding();
+
+      getEmbedSidebar().within(() => {
         cy.findByText("Browser").click();
         cy.findByText("Next").click();
 
@@ -326,3 +363,58 @@ const logRecent = (model: "dashboard" | "card", modelId: number | string) =>
     model: model,
     model_id: modelId,
   });
+
+describe("recently created dashboards", () => {
+  beforeEach(() => {
+    H.restore();
+    cy.signInAsAdmin();
+    H.activateToken("pro-self-hosted");
+    H.updateSetting("enable-embedding-simple", true);
+
+    cy.intercept("GET", "/api/dashboard/**").as("dashboard");
+    cy.intercept("GET", "/api/activity/recents?*").as("recentActivity");
+    cy.intercept("GET", "/api/search?*").as("searchQuery");
+
+    mockEmbedJsToDevServer();
+  });
+
+  // When using x-rays to create your first dashboard in the onboarding
+  // flow, user expects that to be the default for the wizard,
+  // even if they have never visited that dashboard before.
+  it("shows recently created dashboard at the top of the list (EMB-1179)", () => {
+    const { ORDERS_ID } = SAMPLE_DATABASE;
+
+    cy.log("simulate existing recent activity");
+    logRecent("dashboard", ORDERS_DASHBOARD_ID);
+
+    cy.log("create a dashboard via x-ray");
+    cy.visit(`/auto/dashboard/table/${ORDERS_ID}`);
+    H.main()
+      .findByText("Total transactions", { timeout: 10_000 })
+      .should("be.visible");
+
+    cy.button("Save this").click();
+    H.undoToast().should("contain", "Your dashboard was saved");
+
+    visitNewEmbedPage();
+
+    getEmbedSidebar().within(() => {
+      cy.findByText("Next").click();
+      cy.findByText("Select a dashboard to embed").should("be.visible");
+
+      cy.log(
+        "recently created dashboard should show up even though it was never viewed",
+      );
+      const XRAY_DASHBOARD_NAME = "A look at Orders";
+      cy.findByText(XRAY_DASHBOARD_NAME, { timeout: 10_000 }).should(
+        "be.visible",
+      );
+
+      cy.log("the x-ray dashboard should be selected by default");
+      getRecentItemCards()
+        .first()
+        .should("contain", XRAY_DASHBOARD_NAME)
+        .should("have.attr", "data-selected", "true");
+    });
+  });
+});

@@ -16,6 +16,7 @@ import {
   createMockDashboard,
   createMockSettingDefinition,
   createMockSettings,
+  createMockTokenFeatures,
 } from "metabase-types/api/mocks";
 
 import { GeneralSettingsPage } from "./GeneralSettingsPage";
@@ -28,6 +29,7 @@ const generalSettings = {
   "site-url": "https://mysite.biz",
   "admin-email": "help@mysite.biz",
   "anon-tracking-enabled": false,
+  "analytics-pii-retention-enabled": false,
   "redirect-all-requests-to-https": false,
   "humanization-strategy": "simple",
   "enable-xrays": false,
@@ -35,8 +37,15 @@ const generalSettings = {
   "search-engine": "appdb",
 } as const;
 
-const setup = async () => {
-  const settings = createMockSettings(generalSettings);
+const setup = async (
+  { isCloudPlan }: { isCloudPlan: boolean } = { isCloudPlan: false },
+) => {
+  const settings = createMockSettings({
+    ...generalSettings,
+    "token-features": createMockTokenFeatures({
+      hosting: isCloudPlan,
+    }),
+  });
 
   fetchMock.get("https://mysite.biz/api/health", { status: 200 });
 
@@ -69,7 +78,7 @@ const setup = async () => {
     </>,
   );
 
-  await screen.findByText("Redirect to HTTPS");
+  await screen.findByText("Site name");
 };
 
 describe("GeneralSettingsPage", () => {
@@ -82,7 +91,8 @@ describe("GeneralSettingsPage", () => {
       "Redirect to HTTPS",
       "Custom homepage",
       "Email address for help requests",
-      "Anonymous tracking",
+      "Send anonymous tracking data to Metabase",
+      "Collect user data to display in usage analytics",
       "Friendly table and field names",
       "Enable X-Ray features",
       "Allowed domains for iframes in dashboards",
@@ -154,5 +164,21 @@ describe("GeneralSettingsPage", () => {
       const toasts = screen.getAllByLabelText("check_filled icon");
       expect(toasts).toHaveLength(2);
     });
+  });
+
+  it("should show Anonymous Tracking input for non-cloud plans", async () => {
+    await setup({ isCloudPlan: false });
+
+    expect(
+      screen.getByText("Send anonymous tracking data to Metabase"),
+    ).toBeInTheDocument();
+  });
+
+  it("should not show Anonymous Tracking input if the plan is cloud", async () => {
+    await setup({ isCloudPlan: true });
+
+    expect(
+      screen.queryByText("Send anonymous tracking data to Metabase"),
+    ).not.toBeInTheDocument();
   });
 });

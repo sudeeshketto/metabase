@@ -4,6 +4,8 @@ import one_million_component from "./1m.svg?component";
 import one_million_source from "./1m.svg?source";
 import add_component from "./add.svg?component";
 import add_source from "./add.svg?source";
+import add_collection_component from "./add_collection.svg?component";
+import add_collection_source from "./add_collection.svg?source";
 import add_column_component from "./add_column.svg?component";
 import add_column_source from "./add_column.svg?source";
 import add_comment_component from "./add_comment.svg?component";
@@ -66,8 +68,12 @@ import bookmark_component from "./bookmark.svg?component";
 import bookmark_source from "./bookmark.svg?source";
 import bookmark_filled_component from "./bookmark_filled.svg?component";
 import bookmark_filled_source from "./bookmark_filled.svg?source";
+import boxplot_component from "./boxplot.svg?component";
+import boxplot_source from "./boxplot.svg?source";
 import breakout_component from "./breakout.svg?component";
 import breakout_source from "./breakout.svg?source";
+import broken_link_component from "./broken_link.svg?component";
+import broken_link_source from "./broken_link.svg?source";
 import bubble_component from "./bubble.svg?component";
 import bubble_source from "./bubble.svg?source";
 import bug_component from "./bug.svg?component";
@@ -78,6 +84,10 @@ import calendar_component from "./calendar.svg?component";
 import calendar_source from "./calendar.svg?source";
 import camera_component from "./camera.svg?component";
 import camera_source from "./camera.svg?source";
+import chart_layout_default_component from "./chart_layout_default.svg?component";
+import chart_layout_default_source from "./chart_layout_default.svg?source";
+import chart_layout_stack_component from "./chart_layout_stack.svg?component";
+import chart_layout_stack_source from "./chart_layout_stack.svg?source";
 import check_component from "./check.svg?component";
 import check_source from "./check.svg?source";
 import check_filled_component from "./check_filled.svg?component";
@@ -122,6 +132,8 @@ import contract_component from "./contract.svg?component";
 import contract_source from "./contract.svg?source";
 import copy_component from "./copy.svg?component";
 import copy_source from "./copy.svg?source";
+import corner_up_right_component from "./corner_up_right.svg?component";
+import corner_up_right_source from "./corner_up_right.svg?source";
 import currency_component from "./currency.svg?component";
 import currency_source from "./currency.svg?source";
 import curve_component from "./curve.svg?component";
@@ -136,6 +148,10 @@ import data_studio_component from "./data_studio.svg?component";
 import data_studio_source from "./data_studio.svg?source";
 import database_component from "./database.svg?component";
 import database_source from "./database.svg?source";
+import database_routing_component from "./database_routing.svg?component";
+import database_routing_source from "./database_routing.svg?source";
+import dependencies_component from "./dependencies.svg?component";
+import dependencies_source from "./dependencies.svg?source";
 import document_component from "./document.svg?component";
 import document_source from "./document.svg?source";
 import download_component from "./download.svg?component";
@@ -160,6 +176,8 @@ import empty_component from "./empty.svg?component";
 import empty_source from "./empty.svg?source";
 import enter_or_return_component from "./enter_or_return.svg?component";
 import enter_or_return_source from "./enter_or_return.svg?source";
+import exit_component from "./exit.svg?component";
+import exit_source from "./exit.svg?source";
 import expand_component from "./expand.svg?component";
 import expand_source from "./expand.svg?source";
 import expand_arrow_component from "./expand_arrow.svg?component";
@@ -182,8 +200,12 @@ import filter_component from "./filter.svg?component";
 import filter_source from "./filter.svg?source";
 import filter_plus_component from "./filter_plus.svg?component";
 import filter_plus_source from "./filter_plus.svg?source";
+import find_replace_component from "./find_replace.svg?component";
+import find_replace_source from "./find_replace.svg?source";
 import folder_component from "./folder.svg?component";
 import folder_source from "./folder.svg?source";
+import folder_database_component from "./folder_database.svg?component";
+import folder_database_source from "./folder_database.svg?source";
 import folder_filled_component from "./folder_filled.svg?component";
 import folder_filled_source from "./folder_filled.svg?source";
 import format_code_component from "./format_code.svg?component";
@@ -204,10 +226,14 @@ import gear_settings_filled_component from "./gear_settings_filled.svg?component
 import gear_settings_filled_source from "./gear_settings_filled.svg?source";
 import gem_component from "./gem.svg?component";
 import gem_source from "./gem.svg?source";
+import ghost_component from "./ghost.svg?component";
+import ghost_source from "./ghost.svg?source";
 import git_branch_component from "./git_branch.svg?component";
 import git_branch_source from "./git_branch.svg?source";
 import globe_component from "./globe.svg?component";
 import globe_source from "./globe.svg?source";
+import glossary_component from "./glossary.svg?component";
+import glossary_source from "./glossary.svg?source";
 import google_component from "./google.svg?component";
 import google_source from "./google.svg?source";
 import google_drive_component from "./google_drive.svg?component";
@@ -218,6 +244,10 @@ import grabber_component from "./grabber.svg?component";
 import grabber_source from "./grabber.svg?source";
 import grid_component from "./grid.svg?component";
 import grid_source from "./grid.svg?source";
+import grid_2x2_component from "./grid_2x2.svg?component";
+import grid_2x2_source from "./grid_2x2.svg?source";
+import grid_bordered_component from "./grid_bordered.svg?component";
+import grid_bordered_source from "./grid_bordered.svg?source";
 import group_component from "./group.svg?component";
 import group_source from "./group.svg?source";
 import history_component from "./history.svg?component";
@@ -252,6 +282,8 @@ import key_component from "./key.svg?component";
 import key_source from "./key.svg?source";
 import label_component from "./label.svg?component";
 import label_source from "./label.svg?source";
+import layout_grid_component from "./layout_grid.svg?component";
+import layout_grid_source from "./layout_grid.svg?source";
 import ldap_component from "./ldap.svg?component";
 import ldap_source from "./ldap.svg?source";
 import learn_component from "./learn.svg?component";
@@ -294,6 +326,8 @@ import metabot_sad_component from "./metabot_sad.svg?component";
 import metabot_sad_source from "./metabot_sad.svg?source";
 import metric_component from "./metric.svg?component";
 import metric_source from "./metric.svg?source";
+import mode_component from "./mode.svg?component";
+import mode_source from "./mode.svg?source";
 import model_component from "./model.svg?component";
 import model_source from "./model.svg?source";
 import model_with_badge_component from "./model_with_badge.svg?component";
@@ -316,6 +350,8 @@ import octagon_alert_component from "./octagon_alert.svg?component";
 import octagon_alert_source from "./octagon_alert.svg?source";
 import official_collection_component from "./official_collection.svg?component";
 import official_collection_source from "./official_collection.svg?source";
+import open_folder_component from "./open_folder.svg?component";
+import open_folder_source from "./open_folder.svg?source";
 import ordered_list_component from "./ordered_list.svg?component";
 import ordered_list_source from "./ordered_list.svg?source";
 import package_component from "./package.svg?component";
@@ -334,6 +370,8 @@ import person_component from "./person.svg?component";
 import person_source from "./person.svg?source";
 import pie_component from "./pie.svg?component";
 import pie_source from "./pie.svg?source";
+import pie_slice_component from "./pie_slice.svg?component";
+import pie_slice_source from "./pie_slice.svg?source";
 import pin_component from "./pin.svg?component";
 import pin_source from "./pin.svg?source";
 import pinmap_component from "./pinmap.svg?component";
@@ -350,6 +388,10 @@ import popular_component from "./popular.svg?component";
 import popular_source from "./popular.svg?source";
 import progress_component from "./progress.svg?component";
 import progress_source from "./progress.svg?source";
+import publish_component from "./publish.svg?component";
+import publish_source from "./publish.svg?source";
+import published_component from "./published.svg?component";
+import published_source from "./published.svg?source";
 import pulse_component from "./pulse.svg?component";
 import pulse_source from "./pulse.svg?source";
 import question_component from "./question.svg?component";
@@ -368,6 +410,8 @@ import refresh_component from "./refresh.svg?component";
 import refresh_source from "./refresh.svg?source";
 import refresh_downstream_component from "./refresh_downstream.svg?component";
 import refresh_downstream_source from "./refresh_downstream.svg?source";
+import rename_component from "./rename.svg?component";
+import rename_source from "./rename.svg?source";
 import repository_component from "./repository.svg?component";
 import repository_source from "./repository.svg?source";
 import return_component from "./return.svg?component";
@@ -384,6 +428,8 @@ import schema_component from "./schema.svg?component";
 import schema_source from "./schema.svg?source";
 import search_component from "./search.svg?component";
 import search_source from "./search.svg?source";
+import search_check_component from "./search_check.svg?component";
+import search_check_source from "./search_check.svg?source";
 import section_component from "./section.svg?component";
 import section_source from "./section.svg?source";
 import segment_component from "./segment.svg?component";
@@ -490,6 +536,10 @@ import unknown_component from "./unknown.svg?component";
 import unknown_source from "./unknown.svg?source";
 import unpin_component from "./unpin.svg?component";
 import unpin_source from "./unpin.svg?source";
+import unpublish_component from "./unpublish.svg?component";
+import unpublish_source from "./unpublish.svg?source";
+import unreferenced_component from "./unreferenced.svg?component";
+import unreferenced_source from "./unreferenced.svg?source";
 import unsubscribe_component from "./unsubscribe.svg?component";
 import unsubscribe_source from "./unsubscribe.svg?source";
 import upload_component from "./upload.svg?component";
@@ -526,6 +576,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
     add: {
       component: add_component,
       source: add_source,
+    },
+    add_collection: {
+      component: add_collection_component,
+      source: add_collection_source,
     },
     add_column: {
       component: add_column_component,
@@ -651,9 +705,17 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
       component: bolt_filled_component,
       source: bolt_filled_source,
     },
+    boxplot: {
+      component: boxplot_component,
+      source: boxplot_source,
+    },
     breakout: {
       component: breakout_component,
       source: breakout_source,
+    },
+    broken_link: {
+      component: broken_link_component,
+      source: broken_link_source,
     },
     bubble: {
       component: bubble_component,
@@ -670,6 +732,14 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
     camera: {
       component: camera_component,
       source: camera_source,
+    },
+    chart_layout_default: {
+      component: chart_layout_default_component,
+      source: chart_layout_default_source,
+    },
+    chart_layout_stack: {
+      component: chart_layout_stack_component,
+      source: chart_layout_stack_source,
     },
     check: {
       component: check_component,
@@ -755,6 +825,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
       component: copy_component,
       source: copy_source,
     },
+    corner_up_right: {
+      component: corner_up_right_component,
+      source: corner_up_right_source,
+    },
     currency: {
       component: currency_component,
       source: currency_source,
@@ -766,6 +840,14 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
     database: {
       component: database_component,
       source: database_source,
+    },
+    database_routing: {
+      component: database_routing_component,
+      source: database_routing_source,
+    },
+    dependencies: {
+      component: dependencies_component,
+      source: dependencies_source,
     },
     data_studio: {
       component: data_studio_component,
@@ -819,6 +901,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
       component: enter_or_return_component,
       source: enter_or_return_source,
     },
+    exit: {
+      component: exit_component,
+      source: exit_source,
+    },
     expand: {
       component: expand_component,
       source: expand_source,
@@ -863,6 +949,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
       component: filter_plus_component,
       source: filter_plus_source,
     },
+    find_replace: {
+      component: find_replace_component,
+      source: find_replace_source,
+    },
     bug: {
       component: bug_component,
       source: bug_source,
@@ -891,6 +981,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
       component: folder_component,
       source: folder_source,
     },
+    folder_database: {
+      component: folder_database_component,
+      source: folder_database_source,
+    },
     folder_filled: {
       component: folder_filled_component,
       source: folder_filled_source,
@@ -911,6 +1005,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
       component: gem_component,
       source: gem_source,
     },
+    ghost: {
+      component: ghost_component,
+      source: ghost_source,
+    },
     git_branch: {
       component: git_branch_component,
       source: git_branch_source,
@@ -919,6 +1017,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
       component: globe_component,
       source: globe_source,
     },
+    glossary: {
+      component: glossary_component,
+      source: glossary_source,
+    },
     grabber: {
       component: grabber_component,
       source: grabber_source,
@@ -926,6 +1028,14 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
     grid: {
       component: grid_component,
       source: grid_source,
+    },
+    grid_2x2: {
+      component: grid_2x2_component,
+      source: grid_2x2_source,
+    },
+    grid_bordered: {
+      component: grid_bordered_component,
+      source: grid_bordered_source,
     },
     group: {
       component: group_component,
@@ -1006,6 +1116,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
     label: {
       component: label_component,
       source: label_source,
+    },
+    layout_grid: {
+      component: layout_grid_component,
+      source: layout_grid_source,
     },
     ldap: {
       component: ldap_component,
@@ -1091,6 +1205,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
       component: metric_component,
       source: metric_source,
     },
+    mode: {
+      component: mode_component,
+      source: mode_source,
+    },
     model: {
       component: model_component,
       source: model_source,
@@ -1159,6 +1277,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
       component: pie_component,
       source: pie_source,
     },
+    pie_slice: {
+      component: pie_slice_component,
+      source: pie_slice_source,
+    },
     pin: {
       component: pin_component,
       source: pin_source,
@@ -1202,6 +1324,14 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
     embed_static: {
       component: embed_static_component,
       source: embed_static_source,
+    },
+    publish: {
+      component: publish_component,
+      source: publish_source,
+    },
+    published: {
+      component: published_component,
+      source: published_source,
     },
     pulse: {
       component: pulse_component,
@@ -1307,6 +1437,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
       component: refresh_downstream_component,
       source: refresh_downstream_source,
     },
+    rename: {
+      component: rename_component,
+      source: rename_source,
+    },
     repository: {
       component: repository_component,
       source: repository_source,
@@ -1322,6 +1456,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
     search: {
       component: search_component,
       source: search_source,
+    },
+    search_check: {
+      component: search_check_component,
+      source: search_check_source,
     },
     section: {
       component: section_component,
@@ -1481,6 +1619,14 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
       component: unpin_component,
       source: unpin_source,
     },
+    unpublish: {
+      component: unpublish_component,
+      source: unpublish_source,
+    },
+    unreferenced: {
+      component: unreferenced_component,
+      source: unreferenced_source,
+    },
     unsubscribe: {
       component: unsubscribe_component,
       source: unsubscribe_source,
@@ -1504,6 +1650,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
     official_collection: {
       component: official_collection_component,
       source: official_collection_source,
+    },
+    open_folder: {
+      component: open_folder_component,
+      source: open_folder_source,
     },
     ordered_list: {
       component: ordered_list_component,
@@ -1567,7 +1717,6 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
       source: birthday_source,
     },
     external: { component: share_component, source: share_source },
-    table_spaced: { component: table_component, source: table_source },
     collection: { component: folder_component, source: folder_source },
     collection2: {
       component: collection2_component,
@@ -1583,6 +1732,7 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
  */
 export type IconName =
   | "add"
+  | "add_collection"
   | "add_column"
   | "add_data"
   | "add_folder"
@@ -1614,11 +1764,15 @@ export type IconName =
   | "bookmark_filled"
   | "bolt"
   | "bolt_filled"
+  | "boxplot"
   | "breakout"
   | "bubble"
+  | "broken_link"
   | "burger"
   | "calendar"
   | "camera"
+  | "chart_layout_default"
+  | "chart_layout_stack"
   | "check"
   | "check_filled"
   | "code_block"
@@ -1642,8 +1796,11 @@ export type IconName =
   | "connections"
   | "contract"
   | "copy"
+  | "corner_up_right"
   | "curved"
   | "database"
+  | "database_routing"
+  | "dependencies"
   | "data_studio"
   | "dash"
   | "dashboard"
@@ -1660,6 +1817,7 @@ export type IconName =
   | "embed_static"
   | "empty"
   | "enter_or_return"
+  | "exit"
   | "expand"
   | "expand_arrow"
   | "extract"
@@ -1671,6 +1829,7 @@ export type IconName =
   | "fields"
   | "filter"
   | "filter_plus"
+  | "find_replace"
   | "bug"
   | "format_code"
   | "formula"
@@ -1678,15 +1837,20 @@ export type IconName =
   | "funnel"
   | "funnel_outline"
   | "folder"
+  | "folder_database"
   | "folder_filled"
   | "gauge"
   | "gear"
   | "gear_settings_filled"
   | "gem"
+  | "ghost"
   | "globe"
+  | "glossary"
   | "git_branch"
   | "grabber"
   | "grid"
+  | "grid_2x2"
+  | "grid_bordered"
   | "group"
   | "google"
   | "google_drive"
@@ -1707,6 +1871,7 @@ export type IconName =
   | "index"
   | "key"
   | "label"
+  | "layout_grid"
   | "ldap"
   | "learn"
   | "lightbulb"
@@ -1728,6 +1893,7 @@ export type IconName =
   | "metabot"
   | "metabot_sad"
   | "metric"
+  | "mode"
   | "model"
   | "model_with_badge"
   | "moon"
@@ -1746,6 +1912,7 @@ export type IconName =
   | "permissions_limited"
   | "person"
   | "pie"
+  | "pie_slice"
   | "pin"
   | "pinmap"
   | "pivot_table"
@@ -1754,6 +1921,8 @@ export type IconName =
   | "popover"
   | "popular"
   | "progress"
+  | "publish"
+  | "published"
   | "pulse"
   | "receipt"
   | "recents"
@@ -1782,11 +1951,13 @@ export type IconName =
   | "reference"
   | "refresh"
   | "refresh_downstream"
+  | "rename"
   | "repository"
   | "rocket"
   | "ruler"
   | "schema"
   | "search"
+  | "search_check"
   | "section"
   | "segment"
   | "shield"
@@ -1823,11 +1994,14 @@ export type IconName =
   | "undo"
   | "unknown"
   | "unpin"
+  | "unpublish"
+  | "unreferenced"
   | "unsubscribe"
   | "upload"
   | "variable"
   | "verified"
   | "official_collection"
+  | "open_folder"
   | "ordered_list"
   | "verified_filled"
   | "verified_round"
@@ -1845,7 +2019,6 @@ export type IconName =
   | "scalar"
   | "cake"
   | "external"
-  | "table_spaced"
   | "collection"
   | "beaker"
   | "test_tube"

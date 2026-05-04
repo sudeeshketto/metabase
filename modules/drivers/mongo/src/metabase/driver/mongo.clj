@@ -1,12 +1,13 @@
 (ns metabase.driver.mongo
   "MongoDB Driver."
-  (:refer-clojure :exclude [some mapv empty?])
+  (:refer-clojure :exclude [some mapv empty? get-in])
   (:require
    [clojure.set :as set]
    [clojure.string :as str]
    [metabase.driver :as driver]
    [metabase.driver-api.core :as driver-api]
    [metabase.driver.common.table-rows-sample :as table-rows-sample]
+   [metabase.driver.connection :as driver.conn]
    [metabase.driver.mongo.connection :as mongo.connection]
    [metabase.driver.mongo.conversion :as mongo.conversion]
    [metabase.driver.mongo.database :as mongo.db]
@@ -21,7 +22,7 @@
    [metabase.util.date-2 :as u.date]
    [metabase.util.json :as json]
    [metabase.util.log :as log]
-   [metabase.util.performance :refer [some mapv empty?]]
+   [metabase.util.performance :refer [some mapv empty? get-in]]
    [taoensso.nippy :as nippy])
   (:import
    (com.mongodb.client MongoClient MongoDatabase)
@@ -180,7 +181,7 @@
   "Sequence of stages repeated in _search_ phase of [[describe-table-pipeline]]
     for [[describe-table-query-depth]] times.
 
-    Each repetion $unwinds documents having `val` of type \"object\", so those are __swapped__ for sequence
+    Each repetition $unwinds documents having `val` of type \"object\", so those are __swapped__ for sequence
     of their children.
 
     Documents with non-object val are left untouched.
@@ -440,7 +441,8 @@
                               :index-info                      false
                               :python-transforms               true
                               :transforms/python               true
-                              :database-routing                true}]
+                              :database-routing                true
+                              :workspace                       false}]
   (defmethod driver/database-supports? [:mongo feature] [_driver _feature _db] supported?))
 
 (defmethod driver/database-supports? [:mongo :schemas] [_driver _feat _db] false)
@@ -547,7 +549,7 @@
              (encode-object-id [oid] (str "ObjectId(\"" (.toString ^ObjectId oid) "\")"))]
        (cond
          (map? mgo) (encode-map mgo next-indent)
-         (vector? mgo) (encode-vector mgo next-indent)
+         (sequential? mgo) (encode-vector mgo next-indent)
          (instance? ObjectId mgo) (encode-object-id mgo)
          (instance? Binary mgo) (encode-binary mgo)
          :else (json/encode mgo))))))
@@ -555,9 +557,12 @@
 (defmethod driver/prettify-native-form :mongo
   [_driver native-form]
   (try
-    (encode-mongo native-form)
+    (let [parsed (if (string? native-form)
+                   (json/decode native-form)
+                   native-form)]
+      (encode-mongo parsed))
     (catch Throwable e
-      (log/errorf "Unexpected error while encoding Mongo BSON query: %s" (ex-message e))
+      (log/errorf "Unexpected error while prettifying Mongo BSON query: %s" (ex-message e))
       (log/debugf e "Query:\n%s" native-form)
       native-form)))
 
@@ -595,7 +600,7 @@
 
 (defmethod driver/connection-spec :mongo
   [_driver database]
-  (:details database))
+  (driver.conn/effective-details database))
 
 (defmulti ^:private type->database-type
   "Internal type->database-type multimethod for MongoDB that dispatches on type."

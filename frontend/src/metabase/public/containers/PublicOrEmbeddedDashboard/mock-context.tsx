@@ -10,7 +10,7 @@ import {
   mapDispatchToProps,
   mapStateToProps,
 } from "metabase/dashboard/context/context.redux";
-import { connect } from "metabase/lib/redux";
+import { connect } from "metabase/redux";
 
 export type MockDashboardContextProps = Partial<
   Omit<PropsWithChildren<DashboardContextReturned>, "dashboardActions"> & {
@@ -24,13 +24,18 @@ const DashboardContextWithReduxProps = (
   const {
     isEditing,
     downloadsEnabled,
+    withSubscriptions,
     dashboardActions: dashboardActionsOrGetter,
   } = props;
 
   // Use exact same implementation as in DashboardContextProviderInner
   const dashboardActions =
     typeof dashboardActionsOrGetter === "function"
-      ? dashboardActionsOrGetter({ isEditing, downloadsEnabled })
+      ? dashboardActionsOrGetter({
+          isEditing,
+          downloadsEnabled,
+          withSubscriptions,
+        })
       : (dashboardActionsOrGetter ?? null);
 
   return (

@@ -3,6 +3,7 @@ import { useMount } from "react-use";
 import _ from "underscore";
 
 import { initAuth } from "embedding-sdk-bundle/store/auth";
+import { initGuestEmbed } from "embedding-sdk-bundle/store/guest-embed";
 import {
   setFetchRefreshTokenFn,
   setMetabaseClientUrl,
@@ -15,14 +16,37 @@ import { useLazySelector } from "embedding-sdk-shared/hooks/use-lazy-selector";
 import { useMetabaseProviderPropsStore } from "embedding-sdk-shared/hooks/use-metabase-provider-props-store";
 import { ensureMetabaseProviderPropsStore } from "embedding-sdk-shared/lib/ensure-metabase-provider-props-store";
 import { getBuildInfo } from "embedding-sdk-shared/lib/get-build-info";
-import { EMBEDDING_SDK_CONFIG } from "metabase/embedding-sdk/config";
-import api from "metabase/lib/api";
+import registerDashboardVisualizations from "metabase/dashboard/visualizations/register";
+import {
+  EMBEDDING_SDK_CONFIG,
+  isEmbeddingEajs,
+} from "metabase/embedding-sdk/config";
+import type { OnBeforeRequestHandlerConfig } from "metabase/plugins/oss/api";
+import api from "metabase/utils/api";
 import registerVisualizations from "metabase/visualizations/register";
 
+const reactSdkEmbedReferrerHandler = async (
+  config: OnBeforeRequestHandlerConfig,
+): Promise<OnBeforeRequestHandlerConfig | void> => ({
+  ...config,
+  options: {
+    ...config.options,
+    headers: {
+      ...config.options.headers,
+      // eslint-disable-next-line metabase/no-literal-metabase-strings -- header name
+      "X-Metabase-Embed-Referrer": window.location.href,
+    },
+  },
+});
+
 const registerVisualizationsOnce = _.once(registerVisualizations);
+const registerDashboardVisualizationsOnce = _.once(
+  registerDashboardVisualizations,
+);
 
 interface InitDataLoaderParameters {
   reduxStore: SdkStore;
+  isGuestEmbed?: boolean;
   authConfig: MetabaseAuthConfig;
   isLocalHost?: boolean;
 }
@@ -41,23 +65,28 @@ export const useInitData = () => {
     );
   }
 
+  const isGuestEmbed = !!props.authConfig.isGuest;
+
   useInitDataInternal({
     reduxStore,
+    isGuestEmbed,
     authConfig,
   });
 };
 
 export const useInitDataInternal = ({
   reduxStore,
+  isGuestEmbed,
   authConfig,
   isLocalHost,
 }: InitDataLoaderParameters) => {
   const dispatch = reduxStore.dispatch;
 
-  const isAuthUninitialized = () =>
-    reduxStore.getState().sdk.loginStatus.status === "uninitialized";
+  const isDataUninitialized = () =>
+    reduxStore.getState().sdk.initStatus.status === "uninitialized";
 
   const fetchRefreshTokenFnFromStore = useLazySelector(getFetchRefreshTokenFn);
+
   const sdkPackageVersion =
     getBuildInfo("METABASE_EMBEDDING_SDK_PACKAGE_BUILD_INFO").version ?? null;
 
@@ -69,16 +98,26 @@ export const useInitDataInternal = ({
   if (!api.requestClient) {
     api.requestClient = {
       name: EMBEDDING_SDK_CONFIG.metabaseClientRequestHeader,
+      // Note: this is *package* version, it's undefined in EAJS
       version: sdkPackageVersion,
     };
   }
 
+  // For the React SDK, send the host page URL as the embed referrer in a
+  // header on every request. The EAJS iframe registers its own handler in
+  // SdkIframeEmbedRoute.tsx using the value received via postMessage.
+  if (
+    !isEmbeddingEajs() &&
+    !api.beforeRequestHandlers.includes(reactSdkEmbedReferrerHandler)
+  ) {
+    api.beforeRequestHandlers.push(reactSdkEmbedReferrerHandler);
+  }
+
   if (!api.onResponseError) {
-    api.onResponseError = ({
-      metabaseVersion,
-    }: {
-      metabaseVersion: string;
-    }) => {
+    api.onResponseError = ({ metabaseVersion }) => {
+      if (metabaseVersion == null) {
+        return;
+      }
       // Use ensureMetabaseProviderPropsStore to access the current instance of reduxStore
       ensureMetabaseProviderPropsStore()
         .getState()
@@ -99,12 +138,19 @@ export const useInitDataInternal = ({
   }, [authConfig.fetchRequestToken, fetchRefreshTokenFnFromStore, dispatch]);
 
   useMount(function initializeData() {
-    if (isAuthUninitialized()) {
+    if (!isDataUninitialized()) {
+      return;
+    }
+
+    if (isGuestEmbed) {
+      dispatch(initGuestEmbed(authConfig));
+    } else {
       dispatch(initAuth({ ...authConfig, isLocalHost }));
     }
   });
 
   useMount(function registerVisualizations() {
     registerVisualizationsOnce();
+    registerDashboardVisualizationsOnce();
   });
 };

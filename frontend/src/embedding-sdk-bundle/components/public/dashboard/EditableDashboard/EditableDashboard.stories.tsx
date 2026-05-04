@@ -37,7 +37,6 @@ const meta = {
         "table",
         "question",
       ] satisfies SdkQuestionProps["entityTypes"],
-      description: "`question` doesn't have effect on simple data picker",
     },
 
     // Display options
@@ -60,6 +59,15 @@ const meta = {
     withDownloads: {
       control: { type: "boolean" },
       description: "Whether to enable download functionality for cards",
+      table: {
+        type: { summary: "boolean" },
+        defaultValue: { summary: "false" },
+      },
+    },
+    withSubscriptions: {
+      control: { type: "boolean" },
+      description:
+        "Whether to allow users to subscribe themselves to the dashboard",
       table: {
         type: { summary: "boolean" },
         defaultValue: { summary: "false" },
@@ -150,6 +158,9 @@ const meta = {
       },
       action: "onLoadWithoutCards",
     },
+  },
+  args: {
+    autoRefreshInterval: 0,
   },
   render: ({ "dataPickerProps.entityTypes": entityTypes, ...args }) => {
     return (

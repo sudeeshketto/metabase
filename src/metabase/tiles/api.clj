@@ -12,8 +12,8 @@
    [metabase.lib.schema.id :as lib.schema.id]
    [metabase.lib.schema.metadata :as lib.schema.metadata]
    [metabase.parameters.schema :as parameters.schema]
-   [metabase.query-processor :as qp]
    [metabase.query-processor.card :as qp.card]
+   [metabase.query-processor.core :as qp]
    [metabase.query-processor.dashboard :as qp.dashboard]
    [metabase.util :as u]
    [metabase.util.i18n :refer [tru]]
@@ -151,7 +151,7 @@
 (mu/defn- resolve-field :- ::lib.schema.metadata/column
   [query      :- ::lib.schema/query
    legacy-ref :- ::legacy-ref]
-  (lib/metadata query (lib/->pMBQL legacy-ref)))
+  (lib/metadata query (lib/->mbql5 legacy-ref)))
 
 (mu/defn- tiles-query :- ::lib.schema/query
   "Transform a card's query into a query finding coordinates in a particular region.
@@ -225,6 +225,11 @@
 ;; string param). We evaluate the query and find the set of lat/lon pairs which are relevant and then render the
 ;; appropriate ones. It's expected that to render a full map view several calls will be made to this endpoint in
 ;; parallel.
+;;
+;; TODO (Cam 2025-11-25) please add a response schema to this API endpoint, it makes it easier for our customers to
+;; use our API + we will need it when we make auto-TypeScript-signature generation happen
+;;
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-has-response-schema]}
 (api.macros/defendpoint :get "/:zoom/:x/:y"
   "Generates a single tile image for an ad-hoc query."
   [{:keys [zoom x y]} :- [:map
@@ -296,6 +301,10 @@
                     (json/decode+kw s)))}
    ::parameters.schema/parameters])
 
+;; TODO (Cam 2025-11-25) please add a response schema to this API endpoint, it makes it easier for our customers to
+;; use our API + we will need it when we make auto-TypeScript-signature generation happen
+;;
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-has-response-schema]}
 (api.macros/defendpoint :get "/:card-id/:zoom/:x/:y"
   "Generates a single tile image for a saved Card."
   [{:keys [card-id zoom x y]}
@@ -311,6 +320,10 @@
        [:lonField ::legacy-ref]]]
   (process-tiles-query-for-card card-id parameters zoom x y lat-field lon-field))
 
+;; TODO (Cam 2025-11-25) please add a response schema to this API endpoint, it makes it easier for our customers to
+;; use our API + we will need it when we make auto-TypeScript-signature generation happen
+;;
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-has-response-schema]}
 (api.macros/defendpoint :get "/:dashboard-id/dashcard/:dashcard-id/card/:card-id/:zoom/:x/:y"
   "Generates a single tile image for a dashcard."
   [{:keys [dashboard-id dashcard-id card-id zoom x y], :as _route-params}

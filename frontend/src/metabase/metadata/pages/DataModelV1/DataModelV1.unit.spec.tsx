@@ -21,8 +21,9 @@ import {
   within,
 } from "__support__/ui";
 import { getNextId } from "__support__/utils";
-import { checkNotNull } from "metabase/lib/types";
 import { getRawTableFieldId } from "metabase/metadata/utils/field";
+import * as Urls from "metabase/urls";
+import { checkNotNull } from "metabase/utils/types";
 import registerVisualizations from "metabase/visualizations/register";
 import type {
   Database,
@@ -54,7 +55,6 @@ import {
 
 import { DataModelV1 } from "./DataModelV1";
 import type { ParsedRouteParams } from "./types";
-import { getUrl } from "./utils";
 
 registerVisualizations();
 
@@ -237,7 +237,7 @@ async function setup({
     </>,
     {
       withRouter: true,
-      initialRoute: initialRoute ?? getUrl(params),
+      initialRoute: initialRoute ?? Urls.dataModel(params),
     },
   );
 

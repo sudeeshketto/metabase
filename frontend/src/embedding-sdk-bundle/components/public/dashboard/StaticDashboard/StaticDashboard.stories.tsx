@@ -47,6 +47,15 @@ export default {
         defaultValue: { summary: "false" },
       },
     },
+    withSubscriptions: {
+      control: { type: "boolean" },
+      description:
+        "Whether to allow users to subscribe themselves to the dashboard",
+      table: {
+        type: { summary: "boolean" },
+        defaultValue: { summary: "false" },
+      },
+    },
 
     // Parameters
     initialParameters: {
@@ -132,6 +141,9 @@ export default {
       },
       action: "onLoadWithoutCards",
     },
+  },
+  args: {
+    autoRefreshInterval: 0,
   },
 };
 

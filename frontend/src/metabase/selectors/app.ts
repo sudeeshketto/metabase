@@ -7,17 +7,17 @@ import {
   getDashboardId,
   getIsEditing as getIsEditingDashboard,
 } from "metabase/dashboard/selectors";
-import { PLUGIN_DOCUMENTS } from "metabase/plugins";
+import { getCurrentDocument } from "metabase/documents/selectors";
 import {
   getIsSavedQuestionChanged,
   getQuestion,
 } from "metabase/query_builder/selectors";
+import type { State } from "metabase/redux/store";
 import {
   getEmbedOptions,
   getIsEmbeddingIframe,
 } from "metabase/selectors/embed";
 import { getUser } from "metabase/selectors/user";
-import type { State } from "metabase-types/store";
 
 import { getSetting } from "./settings";
 
@@ -35,10 +35,6 @@ const PATHS_WITHOUT_NAVBAR = [
   /\/model\/query/,
   /\/model\/columns/,
   /\/model\/metadata/,
-  /\/metric\/.*\/query/,
-  /\/metric\/.*\/metadata/,
-  /\/metric\/query/,
-  /\/metric\/metadata/,
   /\/transform\/new\/.*\/query/,
 ];
 
@@ -67,11 +63,15 @@ export const getIsDataStudioApp = createSelector([getRouterPath], (path) => {
   return path.startsWith("/data-studio");
 });
 
+export const getIsMetricsViewer = createSelector([getRouterPath], (path) => {
+  return path.startsWith("/explore");
+});
+
 export const getIsCollectionPathVisible = createSelector(
   [
     getQuestion,
     getDashboard,
-    (state) => PLUGIN_DOCUMENTS.getCurrentDocument(state),
+    getCurrentDocument,
     getRouterPath,
     getIsEmbeddingIframe,
     getEmbedOptions,
@@ -204,7 +204,7 @@ export const getIsNewButtonVisible = createSelector(
   },
 );
 
-export const getIsProfileLinkVisible = createSelector(
+export const getIsAppSwitcherVisible = createSelector(
   [getIsEmbeddingIframe],
   (isEmbeddingIframe) => !isEmbeddingIframe,
 );
@@ -227,7 +227,7 @@ export const getCollectionId = createSelector(
     getQuestion,
     getDashboard,
     getDashboardId,
-    (state) => PLUGIN_DOCUMENTS.getCurrentDocument(state),
+    getCurrentDocument,
     getDetailViewState,
   ],
   (question, dashboard, dashboardId, document, detailView) => {

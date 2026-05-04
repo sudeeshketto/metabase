@@ -68,6 +68,13 @@
   {:arglists '([engine])}
   identity)
 
+(defmulti sync-from-restored-db!
+  "Reconcile in-memory search state with what's currently in the database.
+   Used after snapshot restore where the DB already contains valid index data.
+   Engines that store their index in the appdb can skip reindexing."
+  {:arglists '([engine])}
+  identity)
+
 (defn known-engines
   "List the possible search engines defined for this version, whether this instance supports them or not."
   []
@@ -93,3 +100,20 @@
   [engine]
   (let [registered? #(contains? (methods supported-engine?) %)]
     (some registered? (cons engine (ancestors engine)))))
+
+(defmulti disjunction
+  "Given multiple terms to search for, reduce this to a search expression that matches any of them in a single search.
+   If this is not possible, return a list of terms to be searched for separately."
+  {:arglists '([search-engine terms])}
+  (fn [search-engine _terms] search-engine))
+
+(defn default-engine
+  "In the absence of an explicit engine argument in a request, which engine should be used?"
+  []
+  ;; TODO (Chris 2025-11-07) It would be good to have a warning on start up whenever this is *not* what's configured.
+  (first (supported-engines)))
+
+(defmethod disjunction :default [_ terms] terms)
+
+(defmethod disjunction nil [_ terms]
+  (disjunction (default-engine) terms))

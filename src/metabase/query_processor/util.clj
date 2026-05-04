@@ -1,6 +1,6 @@
 (ns metabase.query-processor.util
   "Utility functions used by the global query processor and middleware functions."
-  (:refer-clojure :exclude [select-keys])
+  (:refer-clojure :exclude [select-keys get-in])
   (:require
    [buddy.core.codecs :as codecs]
    [clojure.string :as str]
@@ -14,7 +14,7 @@
    [metabase.query-processor.schema :as qp.schema]
    [metabase.util :as u]
    [metabase.util.malli :as mu]
-   [metabase.util.performance :refer [select-keys]]
+   [metabase.util.performance :refer [select-keys get-in]]
    [potemkin :as p]))
 
 (set! *warn-on-reflection* true)
@@ -130,9 +130,8 @@
   [fresh pre-existing]
   #_{:clj-kondo/ignore [:deprecated-var]}
   (let [by-name (m/index-by :name pre-existing)]
-    (for [{:keys [source] :as col} fresh]
-      (if-let [existing (and (not= :aggregation source)
-                             (get by-name (:name col)))]
+    (for [col fresh]
+      (if-let [existing (get by-name (:name col))]
         (merge col (select-keys existing preserved-keys))
         col))))
 

@@ -1,4 +1,4 @@
-import { updateMetadata } from "metabase/lib/redux/metadata";
+import { updateMetadata } from "metabase/redux/metadata";
 import { FieldSchema } from "metabase/schema";
 import type {
   CreateFieldDimensionRequest,
@@ -81,6 +81,7 @@ export const fieldApi = Api.injectEndpoints({
           idTag("field-values", id),
           tag("parameter-values"),
           tag("card"),
+          tag("dataset"),
         ]),
     }),
     updateFieldValues: builder.mutation<void, UpdateFieldValuesRequest>({
@@ -109,6 +110,7 @@ export const fieldApi = Api.injectEndpoints({
           idTag("field", id),
           idTag("field-values", id),
           tag("parameter-values"),
+          tag("dataset"),
         ]),
     }),
     deleteFieldDimension: builder.mutation<void, FieldId>({
@@ -121,6 +123,7 @@ export const fieldApi = Api.injectEndpoints({
           idTag("field", id),
           idTag("field-values", id),
           tag("parameter-values"),
+          tag("dataset"),
         ]),
     }),
     rescanFieldValues: builder.mutation<void, FieldId>({

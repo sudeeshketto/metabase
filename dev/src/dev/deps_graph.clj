@@ -204,6 +204,21 @@
   ;; has 2 defenterprise-schemas, both to the same ns:
   (find-defenterprise-schemas "src/metabase/sso/ldap/default_implementation.clj"))
 
+(def ^:private ^String project-root (System/getProperty "user.dir"))
+
+(defn- file->path-relative-to-project-root
+  "Get the path of a file relative to the project (repo) root directory e.g.
+
+    (file->path-relative-to-project-root \"/home/cam/metabase/deps.edn\")
+    ;; =>
+    \"deps.edn\""
+  [file]
+  (let [file (io/file file)
+        path (.getAbsolutePath file)]
+    (if (str/starts-with? path project-root)
+      (subs path (inc (count project-root))) ; project root won't include trailing `/`
+      path)))
+
 (def ^:private ignored-dependencies
   "Technically `config` 'uses' `enterprise/core` and `test` since it tries to load them to see if they exist so we know
   if EE/test code is available; however we can ignore them since they're not 'real' usages. So add them here so we
@@ -212,13 +227,16 @@
 
 (mu/defn- file-dependencies :- [:map
                                 [:namespace simple-symbol?]
+                                [:filename  string?] ; filename is relative to [[project-root]]
                                 [:module    symbol?]
                                 [:deps      [:sequential
                                              [:map
                                               [:namespace simple-symbol?]
                                               [:module    symbol?]
                                               [:dynamic {:optional true} :keyword]]]]]
-  [file]
+  [file :- [:or
+            string?
+            [:fn {:error/message "Instance of a java.io.File"} #(instance? java.io.File %)]]]
   (try
     (let [decl         (ns.file/read-file-ns-decl file)
           ns-symb      (ns.parse/name-from-ns-decl decl)
@@ -239,6 +257,7 @@
                               #_defenterprise-deps
                               #_defenterprise-schema-deps])]
       {:namespace ns-symb
+       :filename  (file->path-relative-to-project-root file)
        :module    (module ns-symb)
        :deps      (sort-by pr-str
                            (keep (fn [required-ns]
@@ -262,7 +281,10 @@
 
   (file-dependencies "src/metabase/query_processor/middleware/permissions.clj"))
 
-(defn dependencies []
+(defn dependencies
+  "Calculate information about all the modules dependencies for all *SOURCE* files in the Metabase project by parsing
+  the files."
+  []
   (pmap file-dependencies (find-source-files)))
 
 (defn external-usages
@@ -291,13 +313,28 @@
                 [k (into (sorted-set) (map :namespace) v)]))
          (group-by :depends-on-namespace (external-usages deps module-symb)))))
 
-(defn externally-used-namespaces
-  "All namespaces from a module that are used outside that module."
-  ([module-symb]
-   (externally-used-namespaces (dependencies) module-symb))
+(defn module-friends
+  "`:friends` of the module from the Kondo config -- these are allowed to freely use all namespaces in the module, not
+  just `:api` ones.
 
-  ([deps module-symb]
-   (into (sorted-set) (map :depends-on-namespace) (external-usages deps module-symb))))
+    (module-friends (kondo-config) 'lib)
+    ;; => #{query-processor}"
+  [kondo-config module-symb]
+  (get-in kondo-config [module-symb :friends]))
+
+(declare kondo-config)
+
+(defn externally-used-namespaces-ignoring-friends
+  "All namespaces from a module that are used outside that module, excluding usages by `:friends` of the module."
+  ([module-symb]
+   (externally-used-namespaces-ignoring-friends (dependencies) (kondo-config) module-symb))
+
+  ([deps kondo-config module-symb]
+   (let [friends (module-friends kondo-config module-symb)]
+     (into (sorted-set)
+           (comp (remove #(contains? friends (:module %)))
+                 (map :depends-on-namespace))
+           (external-usages deps module-symb)))))
 
 (defn module-dependencies
   "Build a graph of module => set of modules it directly depends on."
@@ -390,12 +427,12 @@
 (defn generate-config
   "Generate the Kondo config that should go in `.clj-kondo/config/modules/config.edn`."
   ([]
-   (generate-config (dependencies)))
+   (generate-config (dependencies) (kondo-config)))
 
-  ([deps]
+  ([deps kondo-config]
    (into (sorted-map)
          (map (fn [[module uses]]
-                [module {:api  (externally-used-namespaces deps module)
+                [module {:api  (externally-used-namespaces-ignoring-friends deps kondo-config module)
                          :uses uses}]))
          (module-dependencies deps))))
 
@@ -425,12 +462,13 @@
    (kondo-config-diff (dependencies)))
 
   ([deps]
-   (-> (ddiff/diff
-        (update-vals (kondo-config) #(dissoc % :team))
-        (generate-config deps))
-       ddiff/minimize
-       kondo-config-diff-ignore-any
-       ddiff/minimize)))
+   (let [kondo-config (kondo-config)]
+     (-> (ddiff/diff
+          (update-vals kondo-config #(dissoc % :team :friends))
+          (generate-config deps kondo-config))
+         ddiff/minimize
+         kondo-config-diff-ignore-any
+         ddiff/minimize))))
 
 (defn print-kondo-config-diff
   "Print the diff between how the config would look if regenerated with [[generate-config]] versus how it looks in
@@ -518,14 +556,15 @@
 
 (defn leaf-modules
   "Modules that are leaf nodes in the module dependency tree -- nothing else depends on them."
-  []
-  (let [deps (dependencies)]
-    (into (sorted-set)
-          (comp (map :module)
-                (keep (fn [module]
-                        (when (zero? (count (external-usages deps module)))
-                          module))))
-          deps)))
+  ([]
+   (leaf-modules (dependencies)))
+  ([deps]
+   (into (sorted-set)
+         (comp (map :module)
+               (keep (fn [module]
+                       (when (zero? (count (external-usages deps module)))
+                         module))))
+         deps)))
 
 (defn non-dependencies
   "Modules that `module` does not depend on, either directly or indirectly -- changes to any of these modules should not
@@ -534,6 +573,7 @@
   (let [deps        (dependencies)
         all-modules (into (sorted-set) (map :module) deps)
         module-deps (set (keys (all-module-deps-paths deps module)))]
+    #_{:clj-kondo/ignore [:discouraged-var]}
     (printf "Module %s depends on %d/%d (%.1f%%) other modules.\n"
             module
             (count module-deps)
@@ -550,7 +590,8 @@
    (for [dep deps]
      (-> dep
          (cond-> (= (:namespace dep) old-namespace)
-           (assoc :namespace new-namespace))
+           (assoc :namespace new-namespace
+                  :module (module new-namespace)))
          (update :deps (fn [deps]
                          (for [dep deps]
                            (if (= (:namespace dep) old-namespace)
@@ -575,3 +616,307 @@
         new-deps        (simulate-rename deps old-namespace->new-namespace)
         new-module-deps (into (sorted-set) (keys (all-module-deps-paths new-deps module)))]
     (set/difference old-module-deps new-module-deps)))
+
+(mu/defn- module->source-files :- [:set :string]
+  "Return the set of all *source* filenames (relative to the [[project-root]] directory) for a `module`."
+  [deps module]
+  (into
+   (sorted-set)
+   (comp (filter #(= (:module %) module))
+         (map :filename))
+   deps))
+
+(defn- file->namespace
+  "Infer the Clojure namespace from a core project filename.
+
+    (file->namespace \"/home/cam/metabase/enterprise/backend/src/metabase_enterprise/advanced_permissions/common.clj\")
+    ;; =>
+    metabase-enterprise.advanced-permissions.common"
+  [file]
+  (-> file
+      file->path-relative-to-project-root
+      (str/replace #"^enterprise/backend/" "")
+      (str/replace #"^(?:(?:src)|(?:test))/" "")
+      (str/replace #"\.clj[cs]?$" "")
+      (str/replace #"/" ".")
+      (str/replace #"_" "-")
+      symbol))
+
+(defn- module->all-deps [deps module]
+  (keys (all-module-deps-paths deps module)))
+
+(defn test-filenames->relevant-source-filenames
+  "Given a collection of `test-filenames`, return the set of source filenames (relative to the project root directory)
+  that when changed should trigger these tests."
+  ([test-filenames]
+   (test-filenames->relevant-source-filenames (dependencies) test-filenames))
+  ([deps test-filenames]
+   (into
+    (sorted-set)
+    (comp (map file->namespace)
+          (map module)
+          (distinct)
+          (mapcat (fn [module]
+                    (into #{module} (module->all-deps deps module))))
+          (distinct)
+          (mapcat #(module->source-files deps %)))
+    test-filenames)))
+
+(comment
+  ;; should include source files for `settings-rest` itself as well as all modules used either directly or indirectly
+  ;; by `settings-rest` (currently this set is huge, 955 files as of 2025-11-26)
+  (test-filenames->relevant-source-filenames ["test/metabase/settings_rest/api_test.clj"]))
+
+(defn- direct-dependents
+  "Set of modules that directly depend on `module`."
+  [deps module]
+  (into (sorted-set)
+        (keep (fn [ns-info]
+                (when (some (fn [ns-deps]
+                              (= (:module ns-deps) module))
+                            (:deps ns-info))
+                  (:module ns-info))))
+        deps))
+
+(comment
+  (direct-dependents (dependencies) 'driver)
+  (direct-dependents (dependencies) 'settings-rest))
+
+(defn- indirect-dependents
+  "Set of modules that either directly or indirectly depend on `module`."
+  ([module]
+   (indirect-dependents (dependencies) module))
+  ([deps module]
+   (indirect-dependents deps module (sorted-set)))
+  ([deps module acc]
+   (let [module-deps (direct-dependents deps module)
+         new-deps    (set/difference module-deps acc)
+         acc         (into acc new-deps)]
+     (reduce
+      (fn [acc new-dep]
+        (indirect-dependents deps new-dep acc))
+      acc
+      new-deps))))
+
+(comment
+  (indirect-dependents (dependencies) 'settings-rest))
+
+(defn- module->dependents [deps module]
+  (into #{module}
+        (indirect-dependents deps module)))
+
+(comment
+  (module->dependents (dependencies) 'settings-rest))
+
+(defn- module->test-directory [module]
+  (let [parent-dir (case (namespace module)
+                     nil          "test/metabase/"
+                     "enterprise" "enterprise/backend/test/metabase_enterprise/")
+        module-dir (str/replace (name module) #"-" "_")]
+    (str parent-dir module-dir)))
+
+(mu/defn- module->test-files :- [:set :string]
+  "Return the set of test filenames associated with a `module`."
+  [module :- :symbol]
+  (let [test-dir       (module->test-directory module)
+        test-filenames (ns.find/find-sources-in-dir (io/file test-dir))]
+    (into
+     (sorted-set)
+     (map file->path-relative-to-project-root)
+     test-filenames)))
+
+(defn source-filenames->relevant-test-filenames
+  "Given a collection of `source-filenames`, return the set of test filenames (relative to the project root directory)
+  that we should re-run when any of `source-filenames` change."
+  ([source-filenames]
+   (source-filenames->relevant-test-filenames (dependencies) source-filenames))
+  ([deps source-filenames]
+   (into
+    (sorted-set)
+    (comp (map file->namespace)
+          (map module)
+          (distinct)
+          (mapcat #(module->dependents deps %))
+          (mapcat module->test-files))
+    source-filenames)))
+
+(comment
+  ;; should only include tests for `settings-rest`, `api-routes`, `core`, and the handful of random modules that use
+  ;; `settings-rest` (21 files as of 2025-11-26)
+  (source-filenames->relevant-test-filenames ["src/metabase/settings_rest/api.clj"]))
+
+;;;; Model boundary enforcement
+
+(mu/defn find-model-keywords :- [:set :keyword]
+  "Find all `:model/X` keywords referenced in a source file, ignoring comments."
+  [file]
+  (try
+    (let [models (atom #{})]
+      (loop [stack [(z/of-node (r.parser/parse-file-all file))]]
+        (when-let [zloc (peek stack)]
+          (let [stack' (pop stack)
+                stack' (if-let [right (z/right zloc)]
+                         (conj stack' right)
+                         stack')]
+            (if (comment-loc? zloc)
+              (recur stack')
+              (do
+                (when (and (= (z/tag zloc) :token)
+                           (keyword? (z/sexpr zloc))
+                           (= "model" (namespace (z/sexpr zloc)))
+                           (Character/isUpperCase ^char (first (name (z/sexpr zloc)))))
+                  (swap! models conj (z/sexpr zloc)))
+                (recur (if-let [child (z/down zloc)]
+                         (conj stack' child)
+                         stack')))))))
+      @models)
+    (catch Throwable e
+      (throw (ex-info (format "Error scanning model keywords in %s: %s" (str file) (ex-message e))
+                      {:file file}
+                      e)))))
+
+(mu/defn find-model-definitions :- [:set :keyword]
+  "Find all models with their `t2/table-name` defined in this file."
+  [file]
+  (let [models (atom #{})]
+    (loop [stack [(z/of-node (r.parser/parse-file-all file))]]
+      (when-let [zloc (peek stack)]
+        (let [stack' (pop stack)
+              stack' (if-let [right (z/right zloc)]
+                       (conj stack' right)
+                       stack')]
+          (if (comment-loc? zloc)
+            (recur stack')
+            (do
+              (when (= (z/tag zloc) :list)
+                (let [first-child (z/down zloc)]
+                  (when (and first-child
+                             (= (z/tag first-child) :token)
+                             (some-> (:string-value (z/node first-child)) (str/ends-with? "/defmethod")))
+                    (let [second-zloc (z/right first-child)
+                          third-zloc  (some-> second-zloc z/right)]
+                      (when (and second-zloc
+                                 (= (z/sexpr second-zloc) 't2/table-name)
+                                 third-zloc
+                                 (keyword? (z/sexpr third-zloc))
+                                 (= "model" (namespace (z/sexpr third-zloc))))
+                        (swap! models conj (z/sexpr third-zloc)))))))
+              (recur (if-let [child (z/down zloc)]
+                       (conj stack' child)
+                       stack')))))))
+    @models))
+
+(defn model-ownership
+  "Scan all source files via [[find-model-definitions]], building a map of `:model/X` => module symbol.
+  The module is derived from the defining namespace via [[module]]."
+  []
+  (into (sorted-map)
+        (for [file  (find-source-files)
+              :let  [ns-symb (-> (ns.file/read-file-ns-decl file)
+                                 ns.parse/name-from-ns-decl)
+                     mod     (module ns-symb)
+                     models  (find-model-definitions file)]
+              :when mod
+              model models]
+          [model mod])))
+
+(def ^:private model-boundary-exempt-namespaces
+  "Namespaces that are exempt from model boundary checking. These are 'glue' namespaces that intentionally reference
+  all models."
+  #{'metabase.models.resolution})
+
+(defn- model-reference-violations
+  "Return violation types for a single model reference. Pure function — no IO.
+
+  When `model-imports` is `:bypass`, the using module is exempt from all model boundary checks —
+  it may reference any model regardless of whether it is exported."
+  [model defining-mod model-exports model-imports]
+  (if (= model-imports :bypass)
+    []
+    (cond-> []
+      (nil? defining-mod)
+      (conj :unknown-model)
+
+      (and defining-mod
+           (not= model-exports :any)
+           (not (contains? model-exports model)))
+      (conj :not-exported)
+
+      (and defining-mod
+           (not= model-imports :any)
+           (not (contains? model-imports model)))
+      (conj :not-imported))))
+
+(defn model-references-by-module
+  "Scan all source files and build a map of `{module => #{:model/X ...}}` — the set of model keywords
+  referenced in each module's source files. Exempt namespaces (e.g. `metabase.models.resolution`) are excluded.
+  Includes all modules (including bypass modules) — callers filter as needed."
+  []
+  (reduce
+   (fn [acc file]
+     (try
+       (let [ns-symb (-> (ns.file/read-file-ns-decl file)
+                         ns.parse/name-from-ns-decl)
+             mod     (module ns-symb)]
+         (if (and mod (not (contains? model-boundary-exempt-namespaces ns-symb)))
+           (let [models (find-model-keywords file)]
+             (if (seq models)
+               (update acc mod (fnil into (sorted-set)) models)
+               acc))
+           acc))
+       (catch Throwable e
+         (throw (ex-info (format "Error scanning model references in %s" (str file))
+                         {:file file}
+                         e)))))
+   (sorted-map)
+   (find-source-files)))
+
+(defn model-boundary-violations
+  "Find all model boundary violations across the codebase.
+  For each source file, checks that:
+  1. The defining module's `:model-exports` allows the model (`:any` or set containing it)
+  2. The using module's `:model-imports` allows the model (`:any` or set containing it)
+  3. The model's definition exists somewhere (`:unknown-model` is always a violation)
+
+  Modules with `:model-imports :bypass` are exempt from all checks — they may reference any model,
+  even unexported ones.
+
+  Returns a sequence of violation maps with `:file`, `:module`, `:model`, `:defining-module`, `:violation-type`."
+  ([]
+   (model-boundary-violations (kondo-config)))
+  ([kondo-config]
+   (let [ownership (model-ownership)]
+     (into []
+           (comp
+            (mapcat
+             (fn [file]
+               (try
+                 (let [ns-symb (-> (ns.file/read-file-ns-decl file)
+                                   ns.parse/name-from-ns-decl)
+                       mod     (module ns-symb)]
+                   (when (and mod
+                              (not (contains? model-boundary-exempt-namespaces ns-symb)))
+                     (let [model-imports (get-in kondo-config [mod :model-imports] #{})
+                           models       (find-model-keywords file)
+                           rel-path     (file->path-relative-to-project-root file)]
+                       (for [model          models
+                             :let           [defining-mod  (get ownership model)]
+                             :when          (not= defining-mod mod)
+                             :let           [model-exports (when defining-mod
+                                                             (get-in kondo-config [defining-mod :model-exports] #{}))]
+                             violation-type (model-reference-violations
+                                             model defining-mod model-exports model-imports)]
+                         {:file            rel-path
+                          :module          mod
+                          :model           model
+                          :defining-module defining-mod
+                          :violation-type  violation-type}))))
+                 (catch Throwable e
+                   (throw (ex-info (format "Error checking model boundaries in %s" (str file))
+                                   {:file file}
+                                   e)))))))
+           (find-source-files)))))
+
+(comment
+  (model-ownership)
+  (model-boundary-violations (kondo-config)))

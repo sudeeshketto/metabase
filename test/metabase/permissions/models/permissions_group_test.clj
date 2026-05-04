@@ -100,7 +100,7 @@
   (testing "flipping the is_superuser bit should add/remove user from Admin group as appropriate"
     (testing "removing user from Admin should set is_superuser -> false"
       (mt/with-temp [:model/User {user-id :id} {:is_superuser true}]
-        (t2/delete! :model/PermissionsGroupMembership, :user_id user-id, :group_id (u/the-id (perms-group/admin)))
+        (perms/remove-user-from-group! user-id (perms-group/admin))
         (is (false? (t2/select-one-fn :is_superuser :model/User, :id user-id)))))))
 
 (deftest add-remove-from-admin-group-test-3
@@ -120,7 +120,7 @@
 (deftest data-graph-for-group-check-all-groups-test
   (mt/with-temp [:model/PermissionsGroup {} {}
                  :model/Database         {} {}]
-    (doseq [group-id (t2/select-fn-set :id :model/PermissionsGroup)]
+    (doseq [group-id (t2/select-fn-set :id :model/PermissionsGroup :is_tenant_group false)]
       (testing (str "testing data-graph-for-group with group-id: [" group-id "].")
         (let [graph (data-perms.graph/api-graph {:group-id group-id})]
           (is (malli= [:map [:revision :int] [:groups :map]] graph))
@@ -169,7 +169,8 @@
                    :perms/create-queries :no
                    :perms/download-results :no
                    :perms/manage-table-metadata :no
-                   :perms/manage-database :no}}}
+                   :perms/manage-database :no
+                   :perms/transforms :no}}}
                 (data-perms.graph/data-permissions-graph :group-id group-id :db-id db-id)))))))))
 
 (deftest hydrate-members-tests

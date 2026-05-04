@@ -1,11 +1,18 @@
 import type { SdkStoreState } from "embedding-sdk-bundle/store/types";
+import { EMBEDDING_SDK_CONFIG } from "metabase/embedding-sdk/config";
+import type { State } from "metabase/redux/store";
 import { getSetting } from "metabase/selectors/settings";
-import type { State } from "metabase-types/store";
+import { getTokenFeature } from "metabase/setup";
 
-export const getLoginStatus = (state: SdkStoreState) => state.sdk?.loginStatus;
+export const getIsGuestEmbedRaw = (state: SdkStoreState) =>
+  state.sdk?.isGuestEmbed;
 
-export const getIsInitialized = (state: SdkStoreState) =>
-  getLoginStatus(state).status !== "uninitialized";
+export const getIsGuestEmbed = (state: SdkStoreState) =>
+  Boolean(state.sdk?.isGuestEmbed);
+
+export const getInitStatus = (state: SdkStoreState) => state.sdk?.initStatus;
+
+export const getLoginStatus = (state: SdkStoreState) => state.sdk?.initStatus;
 
 export const getIsLoggedIn = (state: SdkStoreState) =>
   getLoginStatus(state).status === "success";
@@ -18,9 +25,6 @@ export const getEventHandlers = (state: SdkStoreState | State) =>
   "sdk" in state ? state.sdk.eventHandlers : null;
 
 export const getUsageProblem = (state: SdkStoreState) => state.sdk.usageProblem;
-
-export const getLoaderComponent = (state: SdkStoreState) =>
-  state.sdk.loaderComponent;
 
 export const getErrorComponent = (state: SdkStoreState) =>
   state.sdk.errorComponent;
@@ -36,5 +40,17 @@ export const getMetabaseInstanceVersion = (state: SdkStoreState) =>
 export const getFetchRefreshTokenFn = (state: SdkStoreState) =>
   state.sdk.fetchRefreshTokenFn;
 
+export const getPluginsReady = (state: SdkStoreState) => state.sdk.pluginsReady;
+
 export const getAvailableFonts = (state: SdkStoreState) =>
   getSetting(state, "available-fonts");
+
+export const getHasTokenFeature = (state: SdkStoreState) => {
+  // When the setting haven't been loaded or failed to query, we assume that the
+  // feature is _enabled_ first.
+  if (!state.settings.values?.["token-features"]) {
+    return true;
+  }
+
+  return getTokenFeature(state, EMBEDDING_SDK_CONFIG.tokenFeatureKey);
+};

@@ -126,7 +126,7 @@
               (is (= 1 (t2/count :model/Revision :model "Card" :model_id (:id card)))))
             (when-not (#{;; these columns are expected to not have a description because it's always
                          ;; comes with a dataset_query changes
-                         :table_id :database_id :query_type :source_card_id  :published_table_id
+                         :table_id :database_id :query_type :source_card_id
                          ;; we don't need a description for made_public_by_id because whenever this field changes
                          ;; public_uuid will change and we have a description for it.
                          :made_public_by_id
@@ -138,10 +138,8 @@
                          :card_schema
                          ;; we don't expect a description for this column because it should never change
                          ;; once created by the migration
-                         :dataset_query_metrics_v2_migration_backup
-                         ;; `dependency_analysis_version` is an internal bookkeeping field.  It doesn't affect the
-                         ;; actual card itself, so no description is necessary.
-                         :dependency_analysis_version} col)
+                         :dataset_query_metrics_v2_migration_backup}
+                       col)
               (testing (format "we should have a revision description for %s" col)
                 (let [diff-strings (revision/diff-strings
                                     ;; TODO -- huh? Shouldn't this be testing against `:model/Card` here???

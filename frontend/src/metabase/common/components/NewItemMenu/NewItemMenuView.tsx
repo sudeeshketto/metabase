@@ -3,12 +3,14 @@ import { useMemo } from "react";
 import { t } from "ttag";
 
 import { ForwardRefLink } from "metabase/common/components/Link";
-import { useDispatch, useSelector } from "metabase/lib/redux";
-import * as Urls from "metabase/lib/urls";
-import { PLUGIN_DOCUMENTS } from "metabase/plugins";
+import { getNewMenuItemAIExploration } from "metabase/metabot/components/NewMenuItemAIExploration";
+import { useUserMetabotPermissions } from "metabase/metabot/hooks";
+import { useDispatch, useSelector } from "metabase/redux";
 import { setOpenModal } from "metabase/redux/ui";
 import { getSetting } from "metabase/selectors/settings";
+import { getUserCanWriteToCollections } from "metabase/selectors/user";
 import { Box, Icon, Menu } from "metabase/ui";
+import * as Urls from "metabase/urls";
 import type { CollectionId } from "metabase-types/api";
 
 import { trackNewMenuItemClicked } from "./analytics";
@@ -25,7 +27,7 @@ export interface NewItemMenuProps {
   onCloseNavbar: () => void;
 }
 
-const NewItemMenuView = ({
+export const NewItemMenuView = ({
   collectionId,
   trigger,
   hasDataAccess,
@@ -38,8 +40,21 @@ const NewItemMenuView = ({
     getSetting(state, "last-used-native-database-id"),
   );
 
+  const canWriteToCollections = useSelector(getUserCanWriteToCollections);
+
+  const { canUseNlq } = useUserMetabotPermissions();
+
   const menuItems = useMemo(() => {
     const items = [];
+
+    const aiExplorationItem = getNewMenuItemAIExploration(
+      hasDataAccess,
+      collectionId,
+      canUseNlq,
+    );
+    if (aiExplorationItem) {
+      items.push(aiExplorationItem);
+    }
 
     if (hasDataAccess) {
       items.push(
@@ -77,31 +92,32 @@ const NewItemMenuView = ({
         </Menu.Item>,
       );
     }
-    items.push(
-      <Menu.Item
-        key="dashboard"
-        onClick={() => {
-          trackNewMenuItemClicked("dashboard");
-          dispatch(setOpenModal("dashboard"));
-        }}
-        leftSection={<Icon name="dashboard" />}
-      >
-        {t`Dashboard`}
-      </Menu.Item>,
-    );
 
-    if (PLUGIN_DOCUMENTS.shouldShowDocumentInNewItemMenu()) {
+    if (canWriteToCollections) {
       items.push(
         <Menu.Item
-          key="document"
-          component={ForwardRefLink}
-          to="/document/new"
-          leftSection={<Icon name="document" />}
+          key="dashboard"
+          onClick={() => {
+            trackNewMenuItemClicked("dashboard");
+            dispatch(setOpenModal("dashboard"));
+          }}
+          leftSection={<Icon name="dashboard" />}
         >
-          {t`Document`}
+          {t`Dashboard`}
         </Menu.Item>,
       );
     }
+
+    items.push(
+      <Menu.Item
+        key="document"
+        component={ForwardRefLink}
+        to="/document/new"
+        leftSection={<Icon name="document" />}
+      >
+        {t`Document`}
+      </Menu.Item>,
+    );
 
     return items;
   }, [
@@ -111,7 +127,13 @@ const NewItemMenuView = ({
     lastUsedDatabaseId,
     hasDatabaseWithJsonEngine,
     dispatch,
+    canWriteToCollections,
+    canUseNlq,
   ]);
+
+  if (menuItems.length === 0) {
+    return null;
+  }
 
   return (
     <Menu position="bottom-end">
@@ -122,6 +144,3 @@ const NewItemMenuView = ({
     </Menu>
   );
 };
-
-// eslint-disable-next-line import/no-default-export -- deprecated usage
-export default NewItemMenuView;

@@ -1,7 +1,9 @@
-export { RelatedSettingsSection } from "./RelatedSettingsSection";
+export {
+  RelatedSettingsSection,
+  RelatedSettingCard,
+} from "./RelatedSettingsSection";
 
 export {
   getModularEmbeddingRelatedSettingItems,
-  getStaticEmbeddingRelatedSettingItems,
-  getInteractiveEmbeddingRelatedSettingItems,
+  getGuestEmbedsRelatedSettingItems,
 } from "./constants";

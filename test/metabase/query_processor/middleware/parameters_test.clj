@@ -361,7 +361,7 @@
                      [:params [:= ["G%"]]]]]]
                   (substitute-params mp query))))))
 
-;;; see also [[metabase.query-processor-test.parameters-test/filter-nested-queries-test]]
+;;; see also [[metabase.query-processor.parameters-test/filter-nested-queries-test]]
 (deftest ^:parallel filter-nested-queries-test
   (testing "We should be able to apply filters explicitly targeting nested native stages (#48258)"
     (let [mp    (lib.tu/mock-metadata-provider
@@ -489,7 +489,7 @@
                                                 :effective-type                                    :type/Integer
                                                 :lib/expression-name                               "Quantity_2"
                                                 :lib/uuid                                          "a9212400-3b5f-4034-b7a0-f8848579af30"
-                                                :metabase.lib.query/transformation-added-base-type true}
+                                                :lib/transformation-added-base-type true}
                                                (meta/id :orders :quantity)]]}]
                :parameters   [{:id     "c77842b9"
                                :target [:dimension

@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
 import { P, match } from "ts-pattern";
+import { t } from "ttag";
 
-import { CreateDashboardModal } from "metabase/dashboard/containers/CreateDashboardModal";
+import { CreateDashboardModal } from "metabase/common/CreateDashboard/CreateDashboardModal";
 import { AddDataModal } from "metabase/nav/containers/MainNavbar/MainNavbarContainer/AddDataModal";
+import { PLUGIN_TENANTS } from "metabase/plugins";
 
 import {
   useCompletedEmbeddingHubSteps,
@@ -31,15 +33,37 @@ export const EmbeddingHub = () => {
 
   const lockedSteps: Partial<Record<EmbeddingHubStepId, boolean>> = useMemo(
     () => ({
-      "embed-production": !completedSteps?.["secure-embeds"],
+      "embed-production": !completedSteps?.["sso-configured"],
     }),
     [completedSteps],
   );
 
   const stepperSteps: StepperStep[] = useMemo(() => {
+    const getAlert = (stepId: string) => {
+      if (stepId === "create-test-embed") {
+        const areSimpleStepsCompleted =
+          completedSteps["add-data"] &&
+          completedSteps["create-dashboard"] &&
+          completedSteps["create-test-embed"];
+
+        if (areSimpleStepsCompleted) {
+          return {
+            type: "success" as const,
+            message: t`If all you want is a simple embedded dashboard, you're done! \n If you have a more sophisticated setup in mind, with many users and tenants, then keep going.`,
+          };
+        }
+
+        return {
+          type: "info" as const,
+          message: t`If all you want is a simple embedded dashboard, the steps above are all you need! \n If you have a more sophisticated setup in mind, with many users and tenants, then keep going.`,
+        };
+      }
+    };
+
     return embeddingSteps.map((step) => ({
       id: step.id,
       title: step.title,
+      alert: getAlert(step.id),
       cards: step.actions.map((action) => {
         const stepId = action.stepId ?? step.id;
 
@@ -49,9 +73,10 @@ export const EmbeddingHub = () => {
             type: "click" as const,
             onClick,
           }))
-          .with({ docsPath: P.string }, ({ docsPath }) => ({
+          .with({ docsPath: P.string }, ({ docsPath, anchor }) => ({
             type: "docs" as const,
             docsPath,
+            anchor,
             utm: { utm_campaign: "embedding_hub", utm_content: stepId },
           }))
           .with({ modal: P.nonNullable }, ({ modal }) => ({
@@ -85,6 +110,7 @@ export const EmbeddingHub = () => {
         initialTab={
           openedModal?.type === "add-data" ? openedModal?.initialTab : undefined
         }
+        fromEmbeddingSetupGuide
       />
       <CreateDashboardModal
         opened={openedModal?.type === "new-dashboard"}
@@ -93,7 +119,11 @@ export const EmbeddingHub = () => {
       <EmbeddingHubXrayPickerModal
         opened={openedModal?.type === "xray-dashboard"}
         onClose={closeModal}
+        fromEmbeddingSetupGuide
       />
+      {openedModal?.type === "user-strategy" && (
+        <PLUGIN_TENANTS.EditUserStrategyModal onClose={closeModal} />
+      )}
     </>
   );
 };

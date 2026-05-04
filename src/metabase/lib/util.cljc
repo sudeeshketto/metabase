@@ -1,5 +1,5 @@
 (ns metabase.lib.util
-  (:refer-clojure :exclude [format every? mapv select-keys update-keys some #?(:clj for)])
+  (:refer-clojure :exclude [format every? mapv select-keys update-keys some get-in #?(:clj for)])
   (:require
    #?@(:clj
        ([potemkin :as p])
@@ -23,7 +23,7 @@
    [metabase.util.log :as log]
    [metabase.util.malli :as mu]
    [metabase.util.malli.registry :as mr]
-   [metabase.util.performance :refer [every? mapv select-keys update-keys some #?(:clj for)]]))
+   [metabase.util.performance :refer [every? mapv select-keys update-keys some get-in #?(:clj for)]]))
 
 #?(:clj
    (set! *warn-on-reflection* true))
@@ -41,13 +41,21 @@
 
 ;;; TODO (Cam 9/8/25) -- overlapping functionality with [[metabase.lib.schema.common/is-clause?]]
 (defn clause?
-  "Returns true if this is a clause."
+  "Returns true if this is a **normalized** MBQL 5 clause."
   [clause]
   (and (vector? clause)
        (keyword? (first clause))
        (let [opts (second clause)]
          (and (map? opts)
               (contains? opts :lib/uuid)))))
+
+(defn- denormalized-or-unconverted-clause?
+  "Whether this clause is a not a properly normalized MBQL 5 clause -- usually because it failed normalization because
+  it's invalid, e.g. using an aggregation function like `:sum` inside `:expressions`."
+  [clause]
+  (and (sequential? clause)
+       (not (map-entry? clause))
+       (string? (first clause))))
 
 ;;; TODO (Cam 9/8/25) -- some overlap with [[metabase.lib.dispatch/mbql-clause-type]]
 (defn clause-of-type?
@@ -71,15 +79,15 @@
        (lib.hierarchy/isa? (first clause) ::lib.schema.ref/ref)))
 
 ;;; TODO (Cam 8/28/25) -- base type is the original effective type!!! We shouldn't need a separate
-;;; `:metabase.lib.field/original-effective-type` key.
+;;; `:lib/original-effective-type` key.
 (defn original-isa?
   "Returns whether the type of `expression` isa? `typ`.
    If the expression has an original-effective-type due to bucketing, check that."
   [expression typ]
   (isa?
    (or (and (clause? expression)
-            ((some-fn :metabase.lib.field/original-effective-type :base-type) (lib.options/options expression)))
-       (lib.schema.expression/type-of expression))
+            ((some-fn :lib/original-effective-type :effective-type :base-type) (lib.options/options expression)))
+       (lib.schema.expression/type-of-resolved expression))
    typ))
 
 (defn expression-name
@@ -91,15 +99,21 @@
 (defn top-level-expression-clause
   "Top level expressions must be clauses with :lib/expression-name, so if we get a literal, wrap it in :value."
   [clause a-name]
-  (-> (if (clause? clause)
-        clause
-        [:value {:lib/uuid (str (random-uuid))
-                 :effective-type (lib.schema.expression/type-of clause)}
-         clause])
-      (lib.options/update-options (fn [opts]
-                                    (-> opts
-                                        (assoc :lib/expression-name a-name)
-                                        (dissoc :name :display-name))))))
+  (some-> (cond
+            (clause? clause)
+            clause
+
+            (denormalized-or-unconverted-clause? clause)
+            nil
+
+            :else
+            [:value {:lib/uuid (str (random-uuid))
+                     :effective-type (lib.schema.expression/type-of-resolved clause)}
+             clause])
+          (lib.options/update-options (fn [opts]
+                                        (-> opts
+                                            (assoc :lib/expression-name a-name)
+                                            (dissoc :name :display-name))))))
 
 (defmulti custom-name-method
   "Implementation for [[custom-name]]."
@@ -261,7 +275,7 @@
   MBQL 5 query. The key difference is that instead of having a `:query` with a `:source-query` with a `:source-query`
   and so forth, you have a vector of `:stages` where each stage serves as the source query for the next stage.
   Initially this was an implementation detail of a few functions, but it's easier to visualize and manipulate, so now
-  all of MLv2 deals with MBQL 5. See this Slack thread
+  all of Lib deals with MBQL 5. See this Slack thread
   https://metaboat.slack.com/archives/C04DN5VRQM6/p1677118410961169?thread_ts=1677112778.742589&cid=C04DN5VRQM6 for
   more information."
   [query]
@@ -396,27 +410,6 @@
       (native-stage? query -1)
       (update :stages conj {:lib/type :mbql.stage/mbql}))))
 
-(defn join-strings-with-conjunction
-  "This is basically [[clojure.string/join]] but uses commas to join everything but the last two args, which are joined
-  by a string `conjunction`. Uses Oxford commas for > 2 args.
-
-  (join-strings-with-conjunction \"and\" [\"X\" \"Y\" \"Z\"])
-  ;; => \"X, Y, and Z\""
-  [conjunction coll]
-  (when (seq coll)
-    (if (= (count coll) 1)
-      (first coll)
-      (let [conjunction (str \space (str/trim conjunction) \space)]
-        (if (= (count coll) 2)
-          ;; exactly 2 args: X and Y
-          (str (first coll) conjunction (second coll))
-          ;; > 2 args: X, Y, and Z
-          (str
-           (str/join ", " (butlast coll))
-           ","
-           conjunction
-           (last coll)))))))
-
 (mu/defn legacy-string-table-id->card-id :- [:maybe ::lib.schema.id/card]
   "If `table-id` is a legacy `card__<id>`-style string, parse the `<id>` part to an integer Card ID. Only for legacy
   queries! You don't need to use this in MBQL 5 since this is converted automatically by [[metabase.lib.convert]] to
@@ -509,13 +502,13 @@
         query     (fresh-uuids query (fn [old-uuid new-uuid]
                                        (vswap! remapping assoc! old-uuid new-uuid)))
         remapping (persistent! @remapping)]
-    (lib.util.match/replace query
+    (lib.util.match/replace-lite query
       [:aggregation opts old-uuid]
       [:aggregation opts (or (remapping old-uuid)
                              (throw (ex-info "Could not convert old :aggregation ref to new UUIDs"
                                              {:aggregation &match})))])))
 
-(mu/defn normalized-query-type :- [:maybe [:enum #_MLv2 :mbql/query #_legacy :query :native #_audit :internal]]
+(mu/defn normalized-query-type :- [:maybe [:enum #_MBQL5 :mbql/query #_legacy :query :native #_audit :internal]]
   "Get the `:lib/type` or `:type` from `query`, even if it is not-yet normalized."
   [query :- [:maybe :map]]
   (when (map? query)

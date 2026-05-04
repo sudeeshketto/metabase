@@ -15,7 +15,8 @@
    [metabase.util :as u]
    [metabase.util.date-2 :as u.date]
    [metabase.util.honey-sql-2 :as h2x]
-   [metabase.util.performance :refer [some]])
+   [metabase.util.performance :refer [some]]
+   [metabase.util.string :as string])
   (:import
    [java.net Inet4Address Inet6Address]
    [java.sql ResultSet ResultSetMetaData Types]
@@ -182,8 +183,8 @@
   (let [report-timezone (get-report-timezone-id-safely)
         inner-expr      (h2x// expr 1000)]
     (if report-timezone
-      [:'toDateTime64 inner-expr 3 report-timezone]
-      [:'toDateTime64 inner-expr 3])))
+      [:'toDateTime64 inner-expr [:inline 3] (h2x/literal report-timezone)]
+      [:'toDateTime64 inner-expr [:inline 3]])))
 
 (defmethod sql.qp/unix-timestamp->honeysql [:clickhouse :microseconds]
   [_ _ expr]
@@ -357,48 +358,64 @@
         :type/IPAddress [:'toIPv4 value]
         (sql.qp/->honeysql driver value)))))
 
+(defn- text-val? [value]
+  (let [[qual valuevalue fieldinfo] value]
+    (and (isa? qual :value)
+         (isa? (:base_type fieldinfo) :type/Text)
+         (nil? valuevalue))))
+
+(defn- uuid-comp? [field value]
+  (let [[qual valuevalue fieldinfo] value]
+    (and (isa? qual :value)
+         (isa? (:base_type fieldinfo) :type/UUID)
+         (isa? (:base-type (nth field 2)) :type/UUID)
+         (string? valuevalue))))
+
 (defmethod sql.qp/->honeysql [:clickhouse :=]
   [driver [op field value]]
-  (let [[qual valuevalue fieldinfo] value
-        hsql-field (sql.qp/->honeysql driver field)
+  (let [hsql-field (sql.qp/->honeysql driver field)
         hsql-value (sql.qp/->honeysql driver value)]
     (cond
-      (and (isa? qual :value)
-           (isa? (:base_type fieldinfo) :type/Text)
-           (nil? valuevalue))
+      (text-val? value)
       [:or
        [:= hsql-field hsql-value]
        [:= [:'empty hsql-field] 1]]
 
       ;; UUID fields can be compared directly with strings in ClickHouse.
-      (and (isa? qual :value)
-           (isa? (:base_type fieldinfo) :type/UUID)
-           (isa? (:base-type (nth field 2)) :type/UUID)
-           (string? valuevalue))
-      [:= hsql-field hsql-value]
+      ;; If the string is not a valid UUID (ie due to is-empty desugaring),
+      ;; then direct comparison will cause an error, so just return false
+      (uuid-comp? field value)
+      (if (string/valid-uuid? hsql-value)
+        [:= hsql-field hsql-value]
+        false)
 
       :else ((get-method sql.qp/->honeysql [:sql :=]) driver [op field value]))))
 
 (defmethod sql.qp/->honeysql [:clickhouse :!=]
   [driver [op field value]]
-  (let [[qual valuevalue fieldinfo] value
-        hsql-field (sql.qp/->honeysql driver field)
+  (let [hsql-field (sql.qp/->honeysql driver field)
         hsql-value (sql.qp/->honeysql driver value)]
-    (if (and (isa? qual :value)
-             (isa? (:base_type fieldinfo) :type/Text)
-             (nil? valuevalue))
+    (cond
+      (text-val? value)
       [:and
        [:!= hsql-field hsql-value]
        [:= [:'notEmpty hsql-field] 1]]
-      ((get-method sql.qp/->honeysql [:sql :!=]) driver [op field value]))))
+
+      (uuid-comp? field value)
+      (if (string/valid-uuid? hsql-value)
+        [:or [:!= hsql-field hsql-value]
+         [:isNull hsql-field]]
+        true)
+
+      :else ((get-method sql.qp/->honeysql [:sql :!=]) driver [op field value]))))
 
 ;; I do not know why the tests expect nil counts for empty results
 ;; but that's how it is :-)
 ;;
 ;; It would even be better if we could use countIf and sumIf directly
 ;;
-;; metabase.query-processor-test.count-where-test
-;; metabase.query-processor-test.share-test
+;; metabase.query-processor.count-where-test
+;; metabase.query-processor.share-test
 (defmethod sql.qp/->honeysql [:clickhouse :count-where]
   [driver [_ pred]]
   [:case
@@ -417,7 +434,9 @@
 
 (defn- clickhouse-string-fn
   [fn-name field value options]
-  (let [hsql-field (sql.qp/->honeysql :clickhouse field)
+  (let [[_ _ {:keys [base-type]}] field
+        hsql-field (cond->> (sql.qp/->honeysql :clickhouse field)
+                     (= base-type :type/UUID) (conj [:'toString]))
         hsql-value (sql.qp/->honeysql :clickhouse value)]
     (if (get options :case-sensitive true)
       [fn-name hsql-field hsql-value]
@@ -439,7 +458,9 @@
 
 (defmethod sql.qp/->honeysql [:clickhouse :contains]
   [_ [_ field value options]]
-  (let [hsql-field (sql.qp/->honeysql :clickhouse field)
+  (let [[_ _ {:keys [base-type]}] field
+        hsql-field (cond->> (sql.qp/->honeysql :clickhouse field)
+                     (= base-type :type/UUID) (conj [:'toString]))
         hsql-value (sql.qp/->honeysql :clickhouse value)
         position-fn (if (get options :case-sensitive true)
                       :'positionUTF8
@@ -602,8 +623,11 @@
   (format "'%s'" (t/format "HH:mm:ss.SSSZZZZZ" t)))
 
 (defmethod sql.qp/inline-value [:clickhouse LocalDateTime]
-  [_ t]
-  (format "'%s'" (t/format "yyyy-MM-dd HH:mm:ss.SSS" t)))
+  [_ ^LocalDateTime t]
+  (let [fmt (if (zero? (.getNano t))
+              "yyyy-MM-dd HH:mm:ss"
+              "yyyy-MM-dd HH:mm:ss.SSS")]
+    (format "'%s'" (t/format fmt t))))
 
 (defmethod sql.qp/inline-value [:clickhouse OffsetDateTime]
   [_ ^OffsetDateTime t]
@@ -614,6 +638,28 @@
 (defmethod sql.qp/inline-value [:clickhouse ZonedDateTime]
   [_ t]
   (format "'%s'" (t/format "yyyy-MM-dd HH:mm:ss.SSSZZZZZ" t)))
+
+(defmethod sql.qp/inline-value [:clickhouse (Class/forName "[Ljava.lang.String;")]
+  [driver arr]
+  (format "[%s]" (str/join ", " (map #(sql.qp/inline-value driver %) arr))))
+
+(defmethod sql.qp/inline-value [:clickhouse (Class/forName "[Ljava.lang.Long;")]
+  [driver arr]
+  (format "[%s]" (str/join ", " (map #(sql.qp/inline-value driver %) arr))))
+
+(defmethod sql.qp/inline-value [:clickhouse (Class/forName "[Ljava.lang.Object;")]
+  [driver arr]
+  (format "[%s]" (str/join ", " (map #(sql.qp/inline-value driver %) arr))))
+
+(defmethod sql.qp/inline-value [:clickhouse java.util.HashMap]
+  [driver ^java.util.HashMap m]
+  (format "{%s}"
+          (str/join ", "
+                    (map (fn [^java.util.Map$Entry e]
+                           (format "%s:%s"
+                                   (sql.qp/inline-value driver (str (.getKey e)))
+                                   (sql.qp/inline-value driver (.getValue e))))
+                         (.entrySet m)))))
 
 (defmethod sql.params.substitution/->replacement-snippet-info [:clickhouse UUID]
   [_driver this]

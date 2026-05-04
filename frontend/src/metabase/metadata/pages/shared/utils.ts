@@ -1,6 +1,6 @@
 import { skipToken } from "metabase/api";
-import * as Urls from "metabase/lib/urls";
 import { PLUGIN_FEATURE_LEVEL_PERMISSIONS } from "metabase/plugins";
+import * as Urls from "metabase/urls";
 import { getSchemaName } from "metabase-lib/v1/metadata/utils/schema";
 import type { GetTableQueryMetadataRequest, TableId } from "metabase-types/api";
 
@@ -17,36 +17,8 @@ export function parseRouteParams(params: RouteParams): ParsedRouteParams {
   };
 }
 
-export function getUrl(baseUrl: string, params: ParsedRouteParams): string {
-  const { databaseId, schemaName, tableId, fieldId } = params;
-  const schemaId = `${databaseId}:${schemaName}`;
-
-  if (
-    databaseId != null &&
-    schemaName != null &&
-    tableId != null &&
-    fieldId != null
-  ) {
-    return `${baseUrl}/database/${databaseId}/schema/${schemaId}/table/${tableId}/field/${fieldId}`;
-  }
-
-  if (databaseId != null && schemaName != null && tableId != null) {
-    return `${baseUrl}/database/${databaseId}/schema/${schemaId}/table/${tableId}`;
-  }
-
-  if (databaseId != null && schemaName != null) {
-    return `${baseUrl}/database/${databaseId}/schema/${schemaId}`;
-  }
-
-  if (databaseId != null) {
-    return `${baseUrl}/database/${databaseId}`;
-  }
-
-  return baseUrl;
-}
-
 export function getTableMetadataQuery(
-  tableId: TableId | undefined,
+  tableId: TableId | undefined | null,
 ): GetTableQueryMetadataRequest | typeof skipToken {
   if (tableId == null) {
     return skipToken;

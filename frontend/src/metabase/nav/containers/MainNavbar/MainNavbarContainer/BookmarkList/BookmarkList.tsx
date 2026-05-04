@@ -11,14 +11,16 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { t } from "ttag";
 
-import CollapseSection from "metabase/common/components/CollapseSection";
+import { CollapseSection } from "metabase/common/components/CollapseSection";
 import { Sortable } from "metabase/common/components/Sortable";
+import { getIcon } from "metabase/common/utils/icon";
 import GrabberS from "metabase/css/components/grabber.module.css";
-import Bookmarks from "metabase/entities/bookmarks";
-import { connect } from "metabase/lib/redux";
-import * as Urls from "metabase/lib/urls";
+import { Bookmarks } from "metabase/entities/bookmarks";
 import { PLUGIN_COLLECTIONS } from "metabase/plugins";
+import { connect, useSelector } from "metabase/redux";
+import { getIsTenantUser } from "metabase/selectors/user";
 import { Icon, Tooltip } from "metabase/ui";
+import * as Urls from "metabase/urls";
 import type { Bookmark } from "metabase-types/api";
 
 import { SidebarHeading } from "../../MainNavbar.styled";
@@ -66,6 +68,11 @@ function isBookmarkSelected(bookmark: Bookmark, selectedItem?: SelectedItem) {
   );
 }
 
+function getBookmarkModel(bookmark: Bookmark) {
+  // we should really fix this on the backend
+  return bookmark.card_type === "model" ? "dataset" : bookmark.type;
+}
+
 const BookmarkItem = ({
   bookmark,
   isDraggable,
@@ -76,7 +83,17 @@ const BookmarkItem = ({
 }: BookmarkItemProps) => {
   const isSelected = isBookmarkSelected(bookmark, selectedItem);
   const url = Urls.bookmark(bookmark);
-  const icon = Bookmarks.objectSelectors.getIcon(bookmark);
+  const isTenantUser = useSelector(getIsTenantUser);
+
+  const icon = getIcon(
+    {
+      model: getBookmarkModel(bookmark),
+      display: bookmark.display,
+      authority_level: bookmark.authority_level,
+      is_remote_synced: bookmark.is_remote_synced,
+    },
+    { isTenantUser },
+  );
   const onRemove = () => onDeleteBookmark(bookmark);
 
   const isIrregularCollection =

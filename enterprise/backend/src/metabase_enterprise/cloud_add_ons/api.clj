@@ -13,12 +13,14 @@
    [metabase.util.log :as log]))
 
 (def ^:private requires-terms-of-service?
-  #{"metabase-ai" "metabase-ai-tiered"})
+  #{"metabase-ai" "metabase-ai-tiered" "metabase-ai-managed"})
 
 (def ^:private error-no-connection
   (deferred-tru "Could not establish a connection to Metabase Cloud."))
 (def ^:private error-cannot-purchase
   (deferred-tru "Could not purchase this add-on."))
+(def ^:private error-cannot-remove
+  (deferred-tru "Could not remove this add-on."))
 (def ^:private error-unexpected
   (deferred-tru "Unexpected error"))
 (def ^:private error-not-hosted
@@ -45,6 +47,18 @@
 (def ^:private response-success-empty
   {:status 200 :body {}})
 
+(def ^:private cloud-add-on-product-types
+  [:enum
+   "metabase-ai"
+   "metabase-ai-tiered"
+   "metabase-ai-managed"
+   "python-execution"
+   "transforms"
+   "transforms-basic"
+   "transforms-advanced"
+   "transforms-basic-metered"
+   "transforms-advanced-metered"])
+
 (defn- handle-store-api-error
   "Handle exceptions from Store API calls and return appropriate error response."
   [exception & [extra-status-mappings]]
@@ -63,6 +77,10 @@
     (:body (http/get (str url "/api/v2" endpoint) {:as :json}))
     (throw (ex-info (tru "Please configure store-api-url") {:status-code 400}))))
 
+;; TODO (Cam 2025-11-25) please add a response schema to this API endpoint, it makes it easier for our customers to
+;; use our API + we will need it when we make auto-TypeScript-signature generation happen
+;;
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-has-response-schema]}
 (api.macros/defendpoint :get "/plans"
   "Get plans information from the Metabase Store API."
   []
@@ -78,6 +96,10 @@
         (log/warn e "Error fetching plans information")
         (handle-store-api-error e)))))
 
+;; TODO (Cam 2025-11-25) please add a response schema to this API endpoint, it makes it easier for our customers to
+;; use our API + we will need it when we make auto-TypeScript-signature generation happen
+;;
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-has-response-schema]}
 (api.macros/defendpoint :get "/addons"
   "Get addons information from the Metabase Store API."
   []
@@ -93,10 +115,14 @@
         (log/warn e "Error fetching addons information")
         (handle-store-api-error e)))))
 
+;; TODO (Cam 2025-11-25) please add a response schema to this API endpoint, it makes it easier for our customers to
+;; use our API + we will need it when we make auto-TypeScript-signature generation happen
+;;
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-has-response-schema]}
 (api.macros/defendpoint :post "/:product-type"
   "Purchase an add-on."
   [{:keys [product-type]} :- [:map
-                              [:product-type [:enum "metabase-ai" "metabase-ai-tiered" "python-execution"]]]
+                              [:product-type cloud-add-on-product-types]]
    _query-params
    {:keys            [quantity]
     terms-of-service :terms_of_service} :- [:map
@@ -115,16 +141,12 @@
          (not quantity))
     response-no-quantity
 
-    (and (= product-type "metabase-ai")
-         (not (premium-features/offer-metabase-ai-trial?)))
+    (and (#{"transforms" "transforms-basic" "transforms-basic-metered"} product-type)
+         (premium-features/enable-basic-transforms?))
     response-not-eligible
 
-    (and (= product-type "metabase-ai-tiered")
-         (not (premium-features/offer-metabase-ai-paid?)))
-    response-not-eligible
-
-    (and (= product-type "python-execution")
-         (not (premium-features/enable-python-transforms?)))
+    (and (#{"python-execution" "transforms-advanced" "transforms-advanced-metered"} product-type)
+         (premium-features/enable-python-transforms?))
     response-not-eligible
 
     (not (contains? (set (map :email (:store-users (premium-features/token-status))))
@@ -142,6 +164,26 @@
       (catch Exception e
         (log/warnf e "Error purchasing add-on '%s'" product-type)
         (handle-store-api-error e {400 error-cannot-purchase})))))
+
+(api.macros/defendpoint :delete "/:product-type" :- [:map
+                                                     [:status :int]
+                                                     [:body :any]]
+  "Remove an add-on."
+  [{:keys [product-type]} :- [:map
+                              [:product-type cloud-add-on-product-types]]]
+  (api/check-superuser)
+  (cond
+    (not (premium-features/is-hosted?))
+    response-not-hosted
+
+    :else
+    (try
+      (hm.client/call :change-add-ons :remove-add-ons [{:product-type product-type}])
+      (premium-features/clear-cache!)
+      response-success-empty
+      (catch Exception e
+        (log/warnf e "Error removing add-on '%s'" product-type)
+        (handle-store-api-error e {400 error-cannot-remove})))))
 
 (def ^{:arglists '([request respond raise])} routes
   "`/api/ee/cloud-add-ons` routes."

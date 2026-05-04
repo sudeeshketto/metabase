@@ -13,11 +13,11 @@
    [metabase.lib.core :as lib]
    [metabase.lib.metadata :as lib.metadata]
    [metabase.lib.test-util :as lib.tu]
+   [metabase.lib.test-util.notebook-helpers :as lib.tu.notebook]
    [metabase.lib.util.match :as lib.util.match]
    [metabase.permissions.models.data-permissions :as data-perms]
    [metabase.permissions.models.permissions :as perms]
    [metabase.permissions.models.permissions-group :as perms-group]
-   [metabase.query-processor :as qp]
    [metabase.query-processor.middleware.cache-test :as cache-test]
    [metabase.query-processor.middleware.permissions :as qp.perms]
    [metabase.query-processor.middleware.process-userland-query-test :as process-userland-query-test]
@@ -25,10 +25,13 @@
    [metabase.query-processor.preprocess :as qp.preprocess]
    ^{:clj-kondo/ignore [:deprecated-namespace]} [metabase.query-processor.store :as qp.store]
    [metabase.query-processor.streaming.test-util :as streaming.test-util]
+   [metabase.query-processor.test :as qp]
    [metabase.query-processor.util :as qp.util]
    [metabase.query-processor.util.add-alias-info :as add]
    [metabase.request.core :as request]
    [metabase.test :as mt]
+   [metabase.test.data :as data]
+   [metabase.test.data.interface :as tx]
    [metabase.test.fixtures :as fixtures]
    [metabase.test.util :as tu]
    [metabase.util :as u]
@@ -159,8 +162,8 @@
 
 ;; TODO -- #19754 adds [[mt/remove-source-metadata]] that can be used here (once it gets merged)
 (defn- remove-metadata [m]
-  (lib.util.match/replace m
-    (_ :guard (every-pred map? :source-metadata))
+  (lib.util.match/replace-lite m
+    {:source-metadata _}
     (remove-metadata (dissoc &match :source-metadata))))
 
 (defn- apply-row-level-permissions [query]
@@ -626,7 +629,7 @@
                                                    [tag id opts]))
                               (dissoc :fk_target_field_id
                                       :lib/original-display-name
-                                      :metabase.lib.query/transformation-added-base-type))))]
+                                      :lib/transformation-added-base-type))))]
     (f {:cols cols, :expected-cols expected-cols})))
 
 (deftest correct-metadata-test
@@ -878,7 +881,7 @@
           (met/with-user-attributes! :rasta {"cat" 40}
             ;; re-bind current user so updated attributes come in to effect
             (mt/with-test-user :rasta
-              (is (= {"cat" 40}
+              (is (= {"cat" "40"} ;; attributes are always stringified
                      (:login_attributes @api/*current-user*)))
               (let [result (run-query)]
                 (is (= nil
@@ -1718,3 +1721,181 @@
       (met/with-gtaps! {:gtaps {:venues (venues-category-native-sandbox-def)}, :attributes {"cat" 50}}
         (mt/with-premium-features #{}
           (is (thrown-with-msg? clojure.lang.ExceptionInfo sandboxing-disabled-error (run-venues-count-query))))))))
+
+(def ^:private long-names-dataset
+  (tx/dataset-definition
+   "long-column-names"
+   [["long_table"
+     [{:field-name "column_name_with_an_incredibly_verbose_and_exceedingly_detailed_description_that_never_seems_to_end"
+       :base-type  :type/Text}
+      {:field-name "second_column_name_that_is_even_more_over_the_top_with_its_unnecessarily_expansive_wording"
+       :base-type  :type/Text}]
+     [["First row, first column" "First row, second column"]
+      ["Second row, first column" "Second row, second column"]]]]))
+
+(deftest long-native-query-names-sandboxed-basic-test
+  (testing "Issue #66405: Sandboxing with native SQL query should work with long column names"
+    (data/dataset long-names-dataset
+      (met/with-gtaps! {:gtaps {:long_table {:query (mt/native-query {:query "SELECT * FROM LONG_TABLE"})}}}
+        (is (=? {:status "completed"
+                 :row_count 2}
+                (mt/user-http-request :rasta :post 202 "dataset"
+                                      (mt/mbql-query long_table {:limit 5}))))))))
+
+(deftest long-native-query-names-sandboxed-row-filtering-test
+  (testing "Issue #66405: with row filtering (verifies sandbox is actually applied)"
+    (data/dataset long-names-dataset
+      (met/with-gtaps! {:gtaps {:long_table {:query (mt/native-query {:query "SELECT * FROM LONG_TABLE WHERE LONG_TABLE.COLUMN_NAME_WITH_AN_INCREDIBLY_VERBOSE_AND_EXCEEDINGLY_DETAILED_DESCRIPTION_THAT_NEVER_SEEMS_TO_END LIKE 'First%'"})}}}
+        (let [result (mt/user-http-request :rasta :post 202 "dataset"
+                                           (mt/mbql-query long_table))]
+          (is (=? {:status    "completed"
+                   :row_count 1}
+                  result))
+          (is (= "First row, first column"
+                 ;; The first column (index 0) is the auto-generated ID, the text column is at index 1
+                 (-> result :data :rows first second))))))))
+
+(deftest long-native-query-names-sandboxed-column-filtering-test
+  (testing "Issue #66405: with column restriction (only returns subset of columns)"
+    (data/dataset long-names-dataset
+      (met/with-gtaps! {:gtaps {:long_table {:query (mt/native-query {:query "SELECT COLUMN_NAME_WITH_AN_INCREDIBLY_VERBOSE_AND_EXCEEDINGLY_DETAILED_DESCRIPTION_THAT_NEVER_SEEMS_TO_END FROM LONG_TABLE"})}}}
+        (let [result (mt/user-http-request :rasta :post 202 "dataset"
+                                           (mt/mbql-query long_table))]
+          (is (=? {:status    "completed"
+                   :row_count 2}
+                  result))
+          ;; Should only have 1 column (the long-named one), not 2 text columns + ID
+          (is (= 1 (count (-> result :data :cols))))
+          (is (= [["First row, first column"]
+                  ["Second row, first column"]]
+                 (-> result :data :rows))))))))
+
+(deftest long-native-query-names-sandboxed-attribute-test
+  (testing "Issue #66405: with attribute-based sandbox (no query, just remappings)"
+    (data/dataset long-names-dataset
+      (met/with-gtaps! {:gtaps      {:long_table {:remappings {:col1 ["variable" [:field (data/id :long_table :column_name_with_an_incredibly_verbose_and_exceedingly_detailed_description_that_never_seems_to_end) nil]]}}}
+                        :attributes {:col1 "First row, first column"}}
+        (let [result (mt/user-http-request :rasta :post 202 "dataset"
+                                           (mt/mbql-query long_table))]
+          (is (=? {:status    "completed"
+                   :row_count 1}
+                  result))
+          (is (= ["First row, first column" "First row, second column"]
+                 (->> result :data :rows first (drop 1)))))))))
+
+(deftest test-66781
+  (testing "Handle user attribute filters against implicitly joined tables that are also sandboxed correctly (#66781)"
+    (met/with-gtaps! (let [mp (mt/metadata-provider)]
+                       {:gtaps      {:orders {:query      (-> (lib/query mp (lib.metadata/table mp (mt/id :orders)))
+                                                              (as-> $query (lib/remove-field $query
+                                                                                             -1
+                                                                                             (lib.tu.notebook/find-col-with-spec
+                                                                                              $query
+                                                                                              (lib/returned-columns $query)
+                                                                                              {:display-name "Orders"}
+                                                                                              {:display-name "Total"}))))
+                                              :remappings {:user_id [:variable [:field
+                                                                                (mt/id :people :id)
+                                                                                {:source-field (mt/id :orders :user_id)}]]}}
+                                     :people {:query (-> (lib/query mp (lib.metadata/table mp (mt/id :people)))
+                                                         (as-> $query (lib/remove-field $query
+                                                                                        -1
+                                                                                        (lib.tu.notebook/find-col-with-spec
+                                                                                         $query
+                                                                                         (lib/returned-columns $query)
+                                                                                         {:display-name "People"}
+                                                                                         {:display-name "Email"})))
+                                                         (lib/order-by (lib.metadata/field mp (mt/id :people :id))))
+                                              :remappings {:user_id [:variable [:field (mt/id :people :id)]]}}}
+                        :attributes {:user_id 1}})
+      (let [mp    (mt/metadata-provider)
+            query (-> (lib/query mp (lib.metadata/table mp (mt/id :orders)))
+                      (lib/aggregate (lib/sum (lib.metadata/field mp (mt/id :orders :quantity)))))]
+        (is (= [[44]]
+               (mt/rows (mt/user-http-request :rasta :post 202 "dataset" query))))))))
+
+(deftest ^:parallel attr-remapping-parameter-type-test
+  (testing "attr-remapping->parameter uses explicit parameter types instead of :category (QUE2-326)"
+    (let [attr-remapping->parameter #'sandboxing/attr-remapping->parameter
+          mp                        (mt/metadata-provider)]
+      (testing "numeric field → :number/="
+        (is (= :number/=
+               (:type (attr-remapping->parameter mp {"cat" "50"} ["cat" [:variable [:field (mt/id :venues :price) nil]]])))))
+      (testing "text field → :string/="
+        (is (= :string/=
+               (:type (attr-remapping->parameter mp {"cat" "foo"} ["cat" [:variable [:field (mt/id :venues :name) nil]]]))))))))
+
+(deftest unix-timestamp-coercion-with-mbql-sandbox-test
+  (testing "UNIX timestamp coercion should be applied when querying through an MBQL sandbox (#69867)"
+    (mt/test-drivers (e2e-test-drivers)
+      ;; Use venues.price (an integer column) and temporarily give it a UNIX timestamp coercion strategy.
+      ;; With coercion applied, price values (1-4) become timestamps near the Unix epoch.
+      ;; Without coercion, they come back as raw integers.
+      (met/with-gtaps! {:gtaps      {:venues {:query (mt/mbql-query venues)}}
+                        :attributes {}}
+        (tu/with-temp-vals-in-db :model/Field (mt/id :venues :price)
+                                 {:coercion_strategy :Coercion/UNIXSeconds->DateTime
+                                  :effective_type    :type/Instant}
+          (let [result (mt/run-mbql-query venues {:limit 1, :order-by [[:asc $id]]})]
+            ;; venues.price for venue 1 is 3; with coercion this becomes 1970-01-01T00:00:03Z
+            ;; The native_form SQL should contain a timestamp coercion expression
+            (is (string? (-> result mt/rows first last))
+                "Price column should be coerced to a timestamp string, not returned as a raw integer")))))))
+
+(deftest unix-timestamp-coercion-with-native-sandbox-test
+  (testing "UNIX timestamp coercion should be applied when querying through a native SQL sandbox (#69867)"
+    (mt/test-drivers (e2e-test-drivers)
+      ;; Use venues.price (an integer column) and temporarily give it a UNIX timestamp coercion strategy.
+      ;; With coercion applied, price values (1-4) become timestamps near the Unix epoch.
+      ;; Without coercion, they come back as raw integers.
+      (met/with-gtaps! {:gtaps      {:venues {:query (mt/native-query
+                                                      {:query (format-honeysql
+                                                               {:select   [:*]
+                                                                :from     [[(identifier :venues)]]
+                                                                :order-by [[(identifier :venues :id) :asc]]})})}}
+                        :attributes {}}
+        (tu/with-temp-vals-in-db :model/Field (mt/id :venues :price)
+                                 {:coercion_strategy :Coercion/UNIXSeconds->DateTime
+                                  :effective_type    :type/Instant}
+          (let [result (mt/run-mbql-query venues {:limit 1, :order-by [[:asc $id]]})]
+            ;; BUG (#69867): With a native SQL sandbox, the coercion is NOT applied.
+            (is (string? (-> result mt/rows first last))
+                "Price column should be coerced to a timestamp string, not returned as a raw integer")))))))
+
+(deftest unix-timestamp-coercion-with-native-sandbox-and-multiple-stages-test
+  (testing "UNIX timestamp coercion should be applied when querying through a native SQL sandbox (#69867)"
+    (mt/test-drivers (e2e-test-drivers)
+      ;; Use venues.price (an integer column) and temporarily give it a UNIX timestamp coercion strategy.
+      ;; With coercion applied, price values (1-4) become timestamps near the Unix epoch.
+      ;; Without coercion, they come back as raw integers.
+      (testing "and a multi-stage query should apply coercion exactly once (no double-coercion)"
+        (met/with-gtaps! {:gtaps      {:venues {:query (mt/native-query
+                                                        {:query (format-honeysql
+                                                                 {:select   [:*]
+                                                                  :from     [[(identifier :venues)]]
+                                                                  :order-by [[(identifier :venues :id) :asc]]})})}}
+                          :attributes {}}
+          (tu/with-temp-vals-in-db :model/Field (mt/id :venues :price)
+                                   {:coercion_strategy :Coercion/UNIXSeconds->DateTime
+                                    :effective_type    :type/Instant}
+            ;; A 2-stage query: inner stage selects from venues, outer stage wraps it.
+            ;; With sandboxing this becomes 3 levels deep. Coercion must be applied only in the
+            ;; innermost stage (closest to the table), not re-applied in outer stages.
+            ;; If double-coerced, the value would be wildly wrong (treating a timestamp as seconds
+            ;; and adding it to epoch again).
+            (let [mp     (mt/metadata-provider)
+                  base   (-> (lib/query mp (lib.metadata/table mp (mt/id :venues)))
+                             (lib/order-by (lib.metadata/field mp (mt/id :venues :id)))
+                             (lib/limit 1)
+                             lib/append-stage)
+                  field  (lib.metadata/field mp (mt/id :venues :price))
+                  price  (m/find-first #(= (:name field) (:name %))
+                                       (lib/filterable-columns base))
+                  query  (lib/filter base (lib/< price "2037-12-31"))
+                  [row]  (-> query qp/process-query mt/rows)]
+              ;; price=3 → coerced once → "1970-01-01T00:00:03Z"
+              ;; price=3 → coerced twice → would be an enormous date or an error
+              (is (string? (last row))
+                  "Price column should be coerced to a timestamp string")
+              (is (str/starts-with? (last row) "1970-01-01")
+                  "Price should be coerced exactly once, producing a date near the Unix epoch"))))))))

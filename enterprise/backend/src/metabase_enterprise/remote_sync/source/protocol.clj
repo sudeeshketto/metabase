@@ -51,7 +51,10 @@
     "Writes multiple files to the source with a commit message.
 
     Takes a SourceSnapshot instance implementing this protocol, a message (the commit message to use when writing files),
-    and files (a sequence of file specs, which are maps with :path and :content keys).
+    and files (a sequence of file specs). Each file spec is a map with :path and :content keys.
+
+    All existing files within managed directories that are not in the write set are removed.
+    Files outside managed directories are always preserved.
 
     Returns the version of the written files.")
 

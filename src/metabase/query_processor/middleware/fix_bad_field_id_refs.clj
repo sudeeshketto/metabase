@@ -1,5 +1,6 @@
 (ns metabase.query-processor.middleware.fix-bad-field-id-refs
   "Middleware that adds `:join-alias` info to `:field` clauses where needed."
+  (:refer-clojure :exclude [get-in])
   (:require
    [metabase.lib.core :as lib]
    [metabase.lib.field.resolution :as lib.field.resolution]
@@ -7,7 +8,8 @@
    [metabase.lib.schema :as lib.schema]
    [metabase.lib.util.match :as lib.util.match]
    [metabase.lib.walk :as lib.walk]
-   [metabase.util.malli :as mu]))
+   [metabase.util.malli :as mu]
+   [metabase.util.performance :refer [get-in]]))
 
 (mu/defn- fix-bad-field-id-refs-in-stage :- [:maybe ::lib.schema/stage]
   [query :- ::lib.schema/query
@@ -16,18 +18,20 @@
   (let [first-stage-path (conj (pop (vec path)) 0)
         source-table     (:source-table (get-in query first-stage-path))
         update-fields    (fn update-fields [form]
-                           (lib.util.match/replace form
+                           (lib.util.match/replace-lite form
                              ;; don't recurse into joins. But should we update conditions tho.
-                             (join :guard (every-pred map? #(= (:lib/type %) :mbql/join)))
-                             (update join :conditions update-fields)
+                             {:lib/type :mbql/join}
+                             (update &match :conditions update-fields)
 
-                             [:field (_opts :guard (complement :join-alias)) (id :guard pos-int?)]
+                             [:field (opts :guard (not (:join-alias opts))) (id :guard pos-int?)]
                              (or (when-let [col (lib.metadata/field query id)]
                                    (when-not (= (:table-id col) source-table)
                                      (when-let [resolved (lib.walk/apply-f-for-stage-at-path
                                                           lib.field.resolution/resolve-field-ref
                                                           query path &match)]
-                                       (lib/ref resolved))))
+                                       (cond-> (lib/ref resolved)
+                                         (:lib/expression-name opts)
+                                         (lib/update-options assoc :lib/expression-name (:lib/expression-name opts))))))
                                  &match)))
         stage' (update-fields stage)]
     (when-not (= stage' stage)

@@ -1,6 +1,6 @@
 (ns metabase.query-processor.middleware.annotate
   "Middleware for annotating (adding type information to) the results of a query, under the `:cols` column."
-  (:refer-clojure :exclude [every? mapv empty?])
+  (:refer-clojure :exclude [every? mapv empty? get-in])
   (:require
    [metabase.analyze.core :as analyze]
    [metabase.driver.common :as driver.common]
@@ -17,7 +17,7 @@
    [metabase.query-processor.schema :as qp.schema]
    [metabase.util.malli :as mu]
    [metabase.util.malli.registry :as mr]
-   [metabase.util.performance :refer [every? mapv empty?]]
+   [metabase.util.performance :refer [every? mapv empty? get-in]]
    [potemkin :as p]))
 
 (comment metabase.query-processor.middleware.annotate.legacy-helper-fns/keep-me)
@@ -46,7 +46,7 @@
    [:cols {:optional true} ::cols]])
 
 (mu/defn expected-cols :- [:sequential ::qp-results-cased-col]
-  "Return metadata for columns returned by a pMBQL `query`.
+  "Return metadata for columns returned by a MBQL 5 `query`.
 
   `initial-cols` are (optionally) the initial minimal metadata columns as returned by the driver (usually just column
   name and base type). If provided these are merged with the columns the query is expected to return.
@@ -156,7 +156,7 @@
 ;;;;
 
 ;;; These are only for convenience for drivers that used to use stuff in annotate directly -- we can remove it once we
-;;; convert drivers to MLv2
+;;; convert drivers to MBQL 5.
 (p/import-vars
  [metabase.query-processor.middleware.annotate.legacy-helper-fns
   aggregation-name

@@ -1,6 +1,6 @@
 (ns metabase.lib.stage
   "Method implementations for a stage of a query."
-  (:refer-clojure :exclude [mapv some not-empty #?(:clj for)])
+  (:refer-clojure :exclude [mapv some not-empty get-in #?(:clj for)])
   (:require
    [clojure.string :as str]
    [metabase.lib.aggregation :as lib.aggregation]
@@ -26,7 +26,7 @@
    [metabase.util.i18n :as i18n]
    [metabase.util.malli :as mu]
    [metabase.util.namespaces :as shared.ns]
-   [metabase.util.performance :refer [mapv some not-empty #?(:clj for)]]))
+   [metabase.util.performance :refer [mapv some not-empty get-in #?(:clj for)]]))
 
 (comment metabase.lib.stage.util/keep-me)
 
@@ -167,7 +167,7 @@
          ;; Only include "late" expressions when required.
          ;; "Late" expressions those like :offset which can't be used within the same query stage, like aggregations.
          :when (or include-late-exprs?
-                   (not (lib.util.match/match-lite-recursive clause :offset clause)))]
+                   (not (lib.util.match/match-lite clause :offset clause)))]
      (-> col
          (assoc :lib/source :source/expressions, :lib/source-column-alias (:name col))
          (u/assoc-default :effective-type (or (:base-type col) :type/*))))))
@@ -209,7 +209,7 @@
       ;; 1b: default visible Fields for the source Table
       (when source-table
         (assert (integer? source-table))
-        (let [table (lib.metadata/table query source-table)]
+        (when-some [table (lib.metadata/table query source-table)]
           (lib.metadata.calculation/returned-columns query stage-number table options)))
       ;; 1e. Metadata associated with a Metric
       (when metric-based?
@@ -234,8 +234,10 @@
 (mu/defn- existing-visible-columns :- ::lib.metadata.calculation/visible-columns
   [query                                                       :- ::lib.schema/query
    stage-number                                                :- :int
-   {:keys [include-joined? include-expressions?], :as options} :- ::lib.metadata.calculation/visible-columns.options]
-  (let [source-columns (previous-stage-or-source-visible-columns query stage-number options)]
+   {:keys [include-joined? include-expressions? include-sensitive-fields?], :as options} :- ::lib.metadata.calculation/visible-columns.options]
+  (let [source-columns (into []
+                             (lib.metadata/active-column-filter-xform {:include-sensitive? include-sensitive-fields?})
+                             (previous-stage-or-source-visible-columns query stage-number options))]
     (concat
      ;; 1: columns from the previous stage, source table or query
      source-columns

@@ -1,6 +1,7 @@
 (ns metabase.driver.postgres-test
   "Tests for features/capabilities specific to PostgreSQL driver, such as support for Postgres UUID or enum types."
   (:require
+   [clojure.core.async :as a]
    [clojure.java.jdbc :as jdbc]
    [clojure.string :as str]
    [clojure.test :refer :all]
@@ -14,6 +15,7 @@
    [metabase.driver.common.table-rows-sample :as table-rows-sample]
    [metabase.driver.postgres :as postgres]
    [metabase.driver.postgres.actions :as postgres.actions]
+   [metabase.driver.settings :as driver.settings]
    [metabase.driver.sql :as driver.sql]
    [metabase.driver.sql-jdbc.actions :as sql-jdbc.actions]
    [metabase.driver.sql-jdbc.actions-test :as sql-jdbc.actions-test]
@@ -31,9 +33,13 @@
    [metabase.lib.test-util :as lib.tu]
    [metabase.lib.test-util.metadata-providers.mock :as providers.mock]
    [metabase.notification.payload.temp-storage :as temp-storage]
-   [metabase.query-processor :as qp]
    [metabase.query-processor.compile :as qp.compile]
+   [metabase.query-processor.error-type :as qp.error-type]
+   [metabase.query-processor.middleware.catch-exceptions :as catch-exceptions]
+   [metabase.query-processor.pipeline :as qp.pipeline]
+   [metabase.query-processor.reducible :as qp.reducible]
    ^{:clj-kondo/ignore [:deprecated-namespace]} [metabase.query-processor.store :as qp.store]
+   [metabase.query-processor.test :as qp]
    [metabase.secrets.models.secret :as secret]
    [metabase.sync.core :as sync]
    [metabase.sync.sync-metadata :as sync-metadata]
@@ -51,7 +57,7 @@
    [toucan2.core :as t2])
   (:import
    (java.sql Connection)
-   (org.postgresql.util PGobject)))
+   (org.postgresql.util PGobject PSQLException PSQLState)))
 
 (set! *warn-on-reflection* true)
 
@@ -167,7 +173,7 @@
 
 ;;; ------------------------------------------- Tests for sync edge cases --------------------------------------------
 
-(deftest edge-case-identifiers-test
+(deftest ^:sequential edge-case-identifiers-test
   (mt/test-driver :postgres
     (testing "Make sure that Tables / Fields with dots in their names get escaped properly"
       (mt/dataset dots-in-names
@@ -255,9 +261,10 @@
         (jdbc/execute! (sql-jdbc.conn/connection-details->spec :postgres details)
                        ["DROP MATERIALIZED VIEW IF EXISTS test_mview;
                        CREATE MATERIALIZED VIEW test_mview AS
-                       SELECT 'Toucans are the coolest type of bird.' AS true_facts;"])
+                       SELECT 'Toucans are the coolest type of bird.' AS true_facts;
+                       ANALYZE test_mview;"])
         (mt/with-temp [:model/Database database {:engine :postgres, :details (assoc details :dbname "materialized_views_test")}]
-          (is (=? [(default-table-result "test_mview" {:estimated_row_count (mt/malli=? int?)})]
+          (is (=? [(default-table-result "test_mview")]
                   (describe-database->tables :postgres database))))))))
 
 (deftest foreign-tables-test
@@ -291,7 +298,19 @@
                               GRANT ALL ON public.local_table to PUBLIC;")])
         (mt/with-temp [:model/Database database {:engine :postgres, :details (assoc details :dbname "fdw_test")}]
           (is (=? [(default-table-result "foreign_table")
-                   (default-table-result "local_table" {:estimated_row_count (mt/malli=? int?)})]
+                   (default-table-result "local_table" {:estimated_row_count nil})]
+                  (describe-database->tables :postgres database))))))))
+
+(deftest estimated-row-count-hides-zero-test
+  (mt/test-driver :postgres
+    (testing "Check that tables with n_live_tup = 0 return nil for estimated_row_count to avoid confusion with stale stats"
+      (tx/drop-if-exists-and-create-db! driver/*driver* "estimated_count_test")
+      (let [details (mt/dbdef->connection-details :postgres :db {:database-name "estimated_count_test"})]
+        (jdbc/execute! (sql-jdbc.conn/connection-details->spec :postgres details)
+                       ["CREATE TABLE empty_table (id INTEGER);
+                         ANALYZE empty_table;"])
+        (mt/with-temp [:model/Database database {:engine :postgres, :details (assoc details :dbname "estimated_count_test")}]
+          (is (=? [(default-table-result "empty_table" {:estimated_row_count nil})]
                   (describe-database->tables :postgres database))))))))
 
 (deftest recreated-views-test
@@ -509,8 +528,8 @@
                        :type     :query
                        :query    {:source-table "card__123"}})]
           (is (= ["SELECT"
-                  "  \"source\".\"json_alias_test\" AS \"json_alias_test\","
-                  "  \"source\".\"count\" AS \"count\""
+                  "  \"__mb_source\".\"json_alias_test\" AS \"json_alias_test\","
+                  "  \"__mb_source\".\"count\" AS \"count\""
                   "FROM"
                   "  ("
                   "    SELECT"
@@ -522,7 +541,7 @@
                   "      \"json_alias_test\""
                   "    ORDER BY"
                   "      \"json_alias_test\" ASC"
-                  "  ) AS \"source\""
+                  "  ) AS \"__mb_source\""
                   "LIMIT"
                   "  1048575"]
                  (str/split-lines (driver/prettify-native-form :postgres (:query nested))))))))))
@@ -721,21 +740,23 @@
       (mt/with-db db
         (thunk)))))
 
+(deftest ^:parallel money-columns-in-results-test
+  (mt/test-driver :postgres
+    (testing "It should be possible to return money column results (#3754)"
+      (sql-jdbc.execute/do-with-connection-with-options
+       :postgres
+       (mt/db)
+       nil
+       (fn [conn]
+         (with-open [stmt (sql-jdbc.execute/prepared-statement :postgres conn "SELECT 1000::money AS \"money\";" nil)
+                     rs   (sql-jdbc.execute/execute-prepared-statement! :postgres stmt)]
+           (let [row-thunk (sql-jdbc.execute/row-thunk :postgres rs (.getMetaData rs))]
+             (is (= [1000.00M]
+                    (row-thunk))))))))))
+
 (deftest money-columns-test
   (mt/test-driver :postgres
     (testing "We should support the Postgres MONEY type"
-      (testing "It should be possible to return money column results (#3754)"
-        (sql-jdbc.execute/do-with-connection-with-options
-         :postgres
-         (mt/db)
-         nil
-         (fn [conn]
-           (with-open [stmt (sql-jdbc.execute/prepared-statement :postgres conn "SELECT 1000::money AS \"money\";" nil)
-                       rs   (sql-jdbc.execute/execute-prepared-statement! :postgres stmt)]
-             (let [row-thunk (sql-jdbc.execute/row-thunk :postgres rs (.getMetaData rs))]
-               (is (= [1000.00M]
-                      (row-thunk))))))))
-
       (do-with-money-test-db!
        (fn []
          (testing "We should be able to select avg() of a money column (#11498)"
@@ -747,7 +768,6 @@
                   (mt/rows
                    (mt/run-mbql-query bird_prices
                      {:aggregation [[:avg $price]]})))))
-
          (testing "Should be able to filter on a money column"
            (is (= [["Katie Parakeet" 23.99M]]
                   (mt/rows
@@ -757,13 +777,25 @@
                   (mt/rows
                    (mt/run-mbql-query bird_prices
                      {:filter [:!= $price $price]})))))
-
          (testing "Should be able to sort by price"
            (is (= [["Katie Parakeet" 23.99M]
                    ["Lucky Pigeon" 6.00M]]
                   (mt/rows
                    (mt/run-mbql-query bird_prices
-                     {:order-by [[:desc $price]]}))))))))))
+                     {:order-by [[:desc $price]]})))))
+         (testing "Should support floor/ceil/round (#32068)"
+           (doseq [[expr expected] (mt/$ids bird_prices
+                                     {[:ceil $price]                      [[24M]  [6M]]
+                                      [:floor $price]                     [[23M]  [6M]]
+                                      [:round $price]                     [[24M]  [6M]]
+                                      [:* [:floor [:/ $price 10.0]] 10.0] [[20.0] [0.0]]})]
+             (testing (pr-str expr)
+               (let [query (mt/mbql-query bird_prices
+                             {:fields      [[:expression "expr"]]
+                              :expressions {"expr" expr}
+                              :order-by    [[:desc $price]]})]
+                 (is (= expected
+                        (mt/rows (qp/process-query query)))))))))))))
 
 (defn- enums-test-db-details [] (mt/dbdef->connection-details :postgres :db {:database-name "enums_test"}))
 
@@ -1043,6 +1075,62 @@
                      (is (=? {:data {:rows [["Rasta" "good bird" "sad bird" "toucan"]]}}
                              (qp/process-query query))))))))))))))
 
+(deftest filtering-on-enum-from-source-bad-effective-type-test
+  (mt/test-driver
+    :postgres
+    (do-with-enums-db!
+     (fn [enums-db]
+       (mt/with-db enums-db
+         (testing "filtering on enum column should cast properly (#67440)"
+           (let [mp (-> (mt/metadata-provider)
+                        (lib.tu/merged-mock-metadata-provider
+                         {:fields [{:id (mt/id :birds :status)
+                                    :effective-type :type/Text}]}))
+                 query (as-> (lib/query mp (lib.metadata/table mp (mt/id :birds))) $q
+                         (lib/filter $q (lib/= (m/find-first (comp #{"status"} :name)
+                                                             (lib/filterable-columns $q))
+                                               "good bird")))
+                 sql (:query (qp.compile/compile query))]
+             (is (re-find #"CAST" sql))
+             (is (some? (mt/rows (qp/process-query query)))))))))))
+
+(deftest create-schema-if-needed-nil-guard-test
+  (testing "create-schema-if-needed! is a no-op when schema is nil or blank (GDGT-2144)"
+    (let [executed-queries (atom [])]
+      (with-redefs [driver/execute-raw-queries! (fn [_driver _conn-spec queries]
+                                                  (swap! executed-queries conj queries))]
+        (driver/create-schema-if-needed! :postgres ::fake-conn nil)
+        (driver/create-schema-if-needed! :postgres ::fake-conn "")
+        (driver/create-schema-if-needed! :postgres ::fake-conn "   ")
+        (is (empty? @executed-queries)
+            "nil/blank schema should not issue any SQL")))))
+
+(deftest ^:parallel describe-fields-sql-nil-schema-test
+  (testing "describe-fields-sql for Postgres handles nil schema-names correctly (GDGT-2144)"
+    (let [[nil-schema-sql]   (sql-jdbc.sync/describe-fields-sql
+                              :postgres
+                              {:schema-names [nil]
+                               :table-names  ["my_table"]
+                               :details      {}})
+          [mixed-schema-sql] (sql-jdbc.sync/describe-fields-sql
+                              :postgres
+                              {:schema-names [nil "public"]
+                               :table-names  ["my_table"]
+                               :details      {}})
+          [normal-schema-sql] (sql-jdbc.sync/describe-fields-sql
+                               :postgres
+                               {:schema-names ["public"]
+                                :table-names  ["my_table"]
+                                :details      {}})]
+      (is (not (re-find #"(?i)IN \(NULL\)" nil-schema-sql))
+          "rendered SQL must not contain `IN (NULL)` which never matches anything")
+      (is (re-find #"\"table_schema\" IS NULL" nil-schema-sql)
+          "passing [nil] schemas should produce an IS NULL check on table_schema")
+      (is (re-find #"\"table_schema\" IN .+OR .+\"table_schema\" IS NULL" mixed-schema-sql)
+          "mixed nil + non-nil schemas should include both IN and IS NULL")
+      (is (not (re-find #"\"table_schema\" IS NULL" normal-schema-sql))
+          "non-nil-only schemas should not have IS NULL on table_schema"))))
+
 ;; API tests are in [[metabase.actions-rest.api-test]]
 (deftest ^:parallel actions-maybe-parse-sql-violate-not-null-constraint-test
   (testing "violate not null constraint"
@@ -1221,23 +1309,34 @@
                              "  VALUES ('22:00'::time, '9:00'::time, 'Beauty Sleep');")])
         (mt/with-temp [:model/Database database {:engine :postgres, :details (assoc details :dbname "time_field_test")}]
           (sync/sync-database! database)
-          (is (= {"start_time" {:global {:distinct-count 1
-                                         :nil%           0.0}
-                                :type   {:type/DateTime {:earliest "22:00:00"
-                                                         :latest   "22:00:00"}}}
-                  "end_time"   {:global {:distinct-count 1
-                                         :nil%           0.0}
-                                :type   {:type/DateTime {:earliest "09:00:00"
-                                                         :latest   "09:00:00"}}}
-                  "reason"     {:global {:distinct-count 1
-                                         :nil%           0.0}
-                                :type   {:type/Text {:percent-json   0.0
-                                                     :percent-url    0.0
-                                                     :percent-email  0.0
-                                                     :percent-state  0.0
-                                                     :average-length 12.0}}}}
-                 (t2/select-fn->fn :name :fingerprint :model/Field
-                                   :table_id (t2/select-one-pk :model/Table :db_id (u/the-id database))))))))))
+          (let [fingerprints  (t2/select-fn->fn :name :fingerprint :model/Field
+                                                :table_id (t2/select-one-pk :model/Table :db_id (u/the-id database)))
+                ;; Strip extended interestingness stats — this test covers the core TIME fingerprint
+                ;; shape (#5911), not the interestingness metrics.
+                extended-keys [:hour-distribution :weekday-distribution :skewness
+                               :mode-fraction :top-3-fraction
+                               :mode-fraction-by-weekday :mode-fraction-by-hour
+                               :min-length :max-length :percent-blank]
+                trim-type     (fn [fp]
+                                (update fp :type
+                                        (fn [types]
+                                          (update-vals types #(apply dissoc % extended-keys)))))]
+            (is (= {"start_time" {:global {:distinct-count 1
+                                           :nil%           0.0}
+                                  :type   {:type/DateTime {:earliest "22:00:00"
+                                                           :latest   "22:00:00"}}}
+                    "end_time"   {:global {:distinct-count 1
+                                           :nil%           0.0}
+                                  :type   {:type/DateTime {:earliest "09:00:00"
+                                                           :latest   "09:00:00"}}}
+                    "reason"     {:global {:distinct-count 1
+                                           :nil%           0.0}
+                                  :type   {:type/Text {:percent-json   0.0
+                                                       :percent-url    0.0
+                                                       :percent-email  0.0
+                                                       :percent-state  0.0
+                                                       :average-length 12.0}}}}
+                   (update-vals fingerprints trim-type)))))))))
 
 ;;; ----------------------------------------------------- Other ------------------------------------------------------
 
@@ -1963,19 +2062,192 @@
                       (qp/process-query)
                       (mt/rows)))))))))
 
+(defn- pg-obj [type val]
+  (doto (PGobject.) (.setType type) (.setValue val)))
+
 (deftest pgobject-freeze-thaw-test
-  (letfn [(make-pgobject [type value]
-            (doto (PGobject.) (.setType type) (.setValue value)))
-          (test-pgobject-caching [obj]
+  (letfn [(test-pgobject-caching [obj]
             (is (= obj (-> obj nippy/freeze nippy/thaw))))]
     (testing "Simple PGobject instances can be frozen and thawed"
-      (test-pgobject-caching (make-pgobject "foo_type" "abc_val")))
+      (test-pgobject-caching (pg-obj "foo_type" "abc_val")))
     (testing "PGobjects in an array can be frozen and thawed"
-      (let [pg-obj-1 (make-pgobject "foo_type" "abc_val")
-            pg-obj-2 (make-pgobject "foo_type" "xyz_val")
+      (let [pg-obj-1 (pg-obj "foo_type" "abc_val")
+            pg-obj-2 (pg-obj "foo_type" "xyz_val")
             pg-obj-arr [pg-obj-1 pg-obj-2]]
         (test-pgobject-caching pg-obj-arr)))
     (testing "PGobjects in a map can be frozen and thawed"
-      (let [pg-obj (make-pgobject "foo_type" "abc_val")
-            pg-obj-map {:data [pg-obj] :metadata {:type "test"}}]
+      (let [pg-object (pg-obj "foo_type" "abc_val")
+            pg-obj-map {:data [pg-object] :metadata {:type "test"}}]
         (test-pgobject-caching pg-obj-map)))))
+
+(deftest canceled-query-no-stacktrace-test
+  (mt/test-driver :postgres
+    (letfn [(catch-exceptions [run]
+              (let [query    (merge {:type :query, :database 1} {})
+                    metadata {}
+                    rows     []
+                    qp       (fn [query rff]
+                               (run)
+                               (binding [qp.pipeline/*execute* (fn [_driver _query respond]
+                                                                 (respond metadata rows))]
+                                 (qp.pipeline/*run* query rff)))
+                    qp       (catch-exceptions/catch-exceptions qp)
+                    result   (driver/with-driver :h2
+                               (qp (qp/userland-query query) qp.reducible/default-rff))]
+                (cond-> result
+                  (map? result) (update :data dissoc :rows))))
+            (cancel-messages []
+              (comp
+               (filter (comp #(str/includes? % "canceling statement due to user request")
+                             :message))
+               ;; grab first line of the log message to exclude huge stacktrace
+               (map (comp first str/split-lines :message))))]
+      (mt/with-log-messages-for-level [log-messages :error]
+        (testing "Regular exceptions are logged"
+          (catch-exceptions (fn [] (throw (ex-info "Regular error during query" {}))))
+          (is (>= (count (log-messages)) 1)
+              "Regular exceptions should be logged")))
+      (testing "Query cancellation exceptions are not logged"
+        (mt/with-log-messages-for-level [log-messages :error]
+          (let [pg-cancel-ex (PSQLException. "canceling statement due to user request" PSQLState/QUERY_CANCELED)]
+            ;; Wrap it in an ExceptionInfo with the :query-canceled? flag, as our code does
+            (catch-exceptions
+             (fn [] (throw (ex-info "Error executing query: canceling statement due to user request"
+                                    {:driver :postgres
+                                     :sql    ["SELECT pg_sleep(1000)"]
+                                     :params []
+                                     :type   qp.error-type/invalid-query
+                                     :query/query-canceled? true}
+                                    pg-cancel-ex)))))
+          (is (= 0 (count (into [] (cancel-messages) (log-messages))))
+              "Query cancellation exceptions should not be logged")))
+
+      (binding [qp.pipeline/*canceled-chan* (a/promise-chan)]
+        (future
+          (Thread/sleep 400)
+          (a/put! qp.pipeline/*canceled-chan* :cancel))
+        (mt/with-log-messages-for-level [messages :error]
+          (let [response (qp/process-query (assoc-in (mt/native-query {:query "select pg_sleep(8), false"})
+                                                     [:middleware :userland-query?] true))]
+            (is (= "ERROR: canceling statement due to user request" (:error response)))
+            (let [bad-messages (into [] (cancel-messages) (messages))]
+              (is (empty? bad-messages)))))))))
+
+(deftest bit-strings-can-be-filtered
+  (mt/test-driver :postgres
+    (mt/dataset (mt/dataset-definition
+                 "bit_string_dataset"
+                 [["bit_string_table"
+                   [{:field-name "single_bit", :base-type {:native "BIT"}}
+                    {:field-name "fixed_bit", :base-type {:native "BIT(8)"}}
+                    {:field-name "var_bit", :base-type {:native "VARBIT(16)"}}
+                    {:field-name "bit_varying", :base-type {:native "BIT VARYING(32)"}}]
+                   [[(pg-obj "BIT" "1") (pg-obj "BIT" "10101010") (pg-obj "BIT" "1101") (pg-obj "BIT" "111000111")]
+                    [(pg-obj "BIT" "0") (pg-obj "BIT" "00001111") (pg-obj "BIT" "10101") (pg-obj "BIT" "1001001")]
+                    [nil nil nil nil]]]])
+      (let [mp (mt/metadata-provider)
+            base-query (lib/query mp (lib.metadata/table mp (mt/id :bit_string_table)))]
+        (testing "can query all rows"
+          (is (= [[1 "1" "10101010" "1101" "111000111"]
+                  [2 "0" "00001111" "10101" "1001001"]
+                  [3 nil nil nil nil]]
+                 (mt/rows (qp/process-query base-query)))))
+        (testing "can filter by single_bit column"
+          (let [single-bit-col (mt/id :bit_string_table :single_bit)
+                query (-> base-query
+                          (lib/filter (lib/= (lib.metadata/field mp single-bit-col)
+                                             "1")))]
+            (is (= [[1 "1" "10101010" "1101" "111000111"]]
+                   (mt/rows (qp/process-query query))))))
+        (testing "can filter by fixed_bit column"
+          (let [fixed-bit-col (mt/id :bit_string_table :fixed_bit)
+                query (-> base-query
+                          (lib/filter (lib/= (lib.metadata/field mp fixed-bit-col)
+                                             "00001111")))]
+            (is (= [[2 "0" "00001111" "10101" "1001001"]]
+                   (mt/rows (qp/process-query query))))))
+        (testing "can filter by var_bit column"
+          (let [var-bit-col (mt/id :bit_string_table :var_bit)
+                query (-> base-query
+                          (lib/filter (lib/= (lib.metadata/field mp var-bit-col)
+                                             "1101")))]
+            (is (= [[1 "1" "10101010" "1101" "111000111"]]
+                   (mt/rows (qp/process-query query))))))
+        (testing "can filter by bit_varying column"
+          (let [bit-varying-col (mt/id :bit_string_table :bit_varying)
+                query (-> base-query
+                          (lib/filter (lib/= (lib.metadata/field mp bit-varying-col)
+                                             "1001001")))]
+            (is (= [[2 "0" "00001111" "10101" "1001001"]]
+                   (mt/rows (qp/process-query query))))))
+        (let [fixed-bit-col (mt/id :bit_string_table :fixed_bit)]
+          (testing "can filter with not equals"
+            (let [query (-> base-query
+                            (lib/filter (lib/!= (lib.metadata/field mp fixed-bit-col)
+                                                "00001111")))]
+              (is (= [[1 "1" "10101010" "1101" "111000111"]
+                      [3 nil nil nil nil]]
+                     (mt/rows (qp/process-query query))))))
+          (testing "can filter with is empty"
+            (let [query (-> base-query
+                            (lib/filter (lib/is-empty (lib.metadata/field mp fixed-bit-col))))]
+              (is (= [[3 nil nil nil nil]]
+                     (mt/rows (qp/process-query query))))))
+          (testing "can filter with is not empty"
+            (let [query (-> base-query
+                            (lib/filter (lib/not-empty (lib.metadata/field mp fixed-bit-col))))]
+              (is (= [[1 "1" "10101010" "1101" "111000111"]
+                      [2 "0" "00001111" "10101" "1001001"]]
+                     (mt/rows (qp/process-query query)))))))))))
+
+(deftest set-network-timeout-test
+  (mt/test-driver :postgres
+    (testing "network hangs are interrupted after *network-timeout-ms*"
+      (binding [driver.settings/*network-timeout-ms* 3000]
+        (is (thrown-with-msg?
+             org.postgresql.util.PSQLException
+             #"An I/O error occurred while sending to the backend"
+             (try
+               (sql-jdbc.execute/do-with-connection-with-options
+                driver/*driver* (mt/id) nil
+                (fn [^Connection conn]
+                  (with-open [stmt (.createStatement conn)]
+                    (.execute stmt "SELECT pg_sleep(6)"))))
+               (catch Exception e
+                 (is (true? (some #(instance? java.net.SocketTimeoutException %)
+                                  (u/full-exception-chain e))))
+                 (throw e)))))))
+    (testing "network hangs are not interrupted before *network-timeout-ms*"
+      (is (true?
+           (sql-jdbc.execute/do-with-connection-with-options
+            driver/*driver* (mt/id) nil
+            (fn [^Connection conn]
+              (with-open [stmt (.createStatement conn)]
+                (.execute stmt "SELECT pg_sleep(6)")))))))))
+
+(deftest ^:parallel parse-final-identifier-test
+  (mt/test-driver
+    :postgres
+
+    (testing "`final` is allowed as identifier and parsed correctly"
+      (mt/with-temp [:model/Database db {:engine "postgres"
+                                         :name "final"
+                                         :initial_sync_status "complete"}
+                     :model/Table t {:name "final"
+                                     :schema "public"
+                                     :db_id (:id db)}
+                     :model/Field _ {:name "final"
+                                     :table_id (:id t)}]
+        (mt/with-db
+          db
+          (let [mp (mt/metadata-provider)
+                query (lib/native-query mp "select final from final")
+                broken-query (lib/native-query mp "select final, xix from final")]
+            (is (=? #{{:table (:id t)}}
+                    (driver/native-query-deps :postgres query)))
+            (is (=? [{:name "final"
+                      :lib/desired-column-alias "final"}]
+                    (driver/native-result-metadata :postgres query)))
+            (is (=? {:type :missing-column
+                     :name "xix"}
+                    (first (driver/validate-native-query-fields :postgres broken-query))))))))))

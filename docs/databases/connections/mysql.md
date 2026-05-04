@@ -8,7 +8,7 @@ redirect_from:
 
 > This page covers connecting to MySQL as a _data warehouse_. For using MySQL as Metabase's _application database_, see [Configuring the Metabase application database](../../installation-and-operation/configuring-application-database.md).
 
-To add a database connection, click on the **gear** icon in the top right, and navigate to **Admin settings** > **Databases** > **Add a database**.
+To add a database connection, click the **grid** icon in the top right, and navigate to **Admin** > **Databases** > **Add a database**.
 
 ## Supported versions
 
@@ -41,6 +41,16 @@ The database username for the account that you want to use to connect to your da
 ### Password
 
 The password for the username that you use to connect to the database.
+
+### Use an authentication provider
+
+{% include plans-blockquote.html feature="Authenticating with a provider" %}
+
+Instead of a password, you can authenticate with a supported provider. Only for self-hosted Pro and Enterprise plans.
+
+#### IAM authentication
+
+To connect to Amazon RDS instances using IAM authentication instead of a password, see [IAM authentication for AWS RDS](./aws-rds.md#iam-authentication).
 
 ### Use a secure connection (SSL)
 
@@ -176,6 +186,10 @@ mysql:
 ## Passwords with special characters
 
 If your password contains characters that aren't UTF-8, then you might need to add an additional variable to the connection string `passwordCharacterEncoding=<your_encoding_here>`. This ensures that MySQL understands the special characters in the password during authentication.
+
+## Writable connection
+
+Set up an additional connection used for write operations. See [Writable connections](../writable-connection.md).
 
 ## Model features
 

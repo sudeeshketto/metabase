@@ -1,12 +1,13 @@
 ---
-title: Embedded analytics SDK - plugins
+title: Modular embedding SDK - plugins
+summary: Customize modular embedding SDK components with plugins. Control click actions, link handling, and no-data illustrations globally or per-component.
 ---
 
-# Embedded analytics SDK - plugins
+# Modular embedding SDK - plugins
 
-{% include plans-blockquote.html feature="Embedded analytics SDK" sdk=true %}
+{% include plans-blockquote.html feature="Modular embedding SDK" sdk=true %}
 
-The Metabase Embedded analytics SDK supports plugins to customize the behavior of components. These plugins can be used in a global context or on a per-component basis.
+The Metabase modular embedding SDK supports plugins to customize the behavior of components. These plugins can be used in a global context or on a per-component basis.
 
 ## Plugin scope
 
@@ -35,7 +36,7 @@ See docs for specific components:
 
 ### `mapQuestionClickActions`
 
-The plugin `mapQuestionClickActions` lets you to customize what happens when people click on a data point on a dashboard or chart. `mapQuestionClickActions` can be used globally, or on component level.
+The plugin `mapQuestionClickActions` lets you customize what happens when people click on a data point on a dashboard or chart. `mapQuestionClickActions` can be used globally, or on component level.
 
 See [`mapQuestionClickActions` plugin](./questions.md#mapquestionclickactions) for more information and examples.
 
@@ -47,7 +48,13 @@ To customize what happens when people click a link in your embedded questions an
 {% include_file "{{ dirname }}/snippets/plugins/handlelink.tsx" snippet="example" %}
 ```
 
-The plugin `handleLink` can only be used [globally](#plugin-scope) on provider level.
+By default, links open in a new tab. Use `handleLink` to intercept link clicks — for example, to open a URL in a modal or navigate within your app using your router.
+
+The function receives a URL string. Return `{ handled: true }` to prevent default navigation, or `{ handled: false }` to open the link in a new tab.
+
+The plugin `handleLink` can only be used [globally](#plugin-scope) on provider level. `handleLink` is also available in [modular embedding](../modular-embedding.md#page-level-config) via `pluginsConfig` in `defineMetabaseConfig`, with the same API.
+
+To create clickable links in your table columns, set the column's formatting to [display as link](../../data-modeling/formatting.md#display-as).
 
 ### `getNoDataIllustration` and `getNoObjectIllustration`
 
