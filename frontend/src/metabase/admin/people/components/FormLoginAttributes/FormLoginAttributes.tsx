@@ -1,27 +1,33 @@
-import React, { useRef, useEffect } from "react";
 import { useField } from "formik";
+import { useEffect, useRef, useState } from "react";
 import { t } from "ttag";
 
-import { TextInput, Button, Group, Stack, Text } from "metabase/ui";
+import { Button, Group, Stack, Text, TextInput } from "metabase/ui";
+import type { UserId } from "metabase-types/api";
 
 interface Props {
-  userId?: number | null;
+  userId?: UserId | null;
 }
 
-const FormLoginAttributes: React.FC<Props> = () => {
-  const [field, meta, helpers] = useField("login_attributes");
-  const valueInputRef = useRef<HTMLInputElement>(null);
-  const [focusKey, setFocusKey] = React.useState<string | null>(null);
+const getAttributes = (value: unknown) => {
+  return value && typeof value === "object"
+    ? (value as Record<string, string>)
+    : {};
+};
 
-  const attributes: Record<string, string> = (field.value && typeof field.value === "object" ? field.value : {}) as Record<string, string>;
+const FormLoginAttributes = (_props: Props) => {
+  const [{ value }, , { setValue }] = useField("login_attributes");
+  const valueInputRef = useRef<HTMLInputElement>(null);
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+
+  const attributes = getAttributes(value);
 
   const handleAddPair = () => {
     const newKey = "db_role";
-    helpers.setValue({
+    setValue({
       ...attributes,
-      [newKey]: "",
+      [newKey]: attributes[newKey] ?? "",
     });
-    // Focus on the value input after render
     setFocusKey(newKey);
   };
 
@@ -30,7 +36,7 @@ const FormLoginAttributes: React.FC<Props> = () => {
       valueInputRef.current.focus();
       setFocusKey(null);
     }
-  }, [focusKey, attributes]);
+  }, [focusKey]);
 
   const handleUpdateKey = (oldKey: string, newKey: string) => {
     if (oldKey === newKey || !newKey.trim()) {
@@ -40,11 +46,11 @@ const FormLoginAttributes: React.FC<Props> = () => {
     const value = updated[oldKey];
     delete updated[oldKey];
     updated[newKey.trim()] = value;
-    helpers.setValue(updated);
+    setValue(updated);
   };
 
   const handleUpdateValue = (key: string, newValue: string) => {
-    helpers.setValue({
+    setValue({
       ...attributes,
       [key]: newValue,
     });
@@ -53,16 +59,20 @@ const FormLoginAttributes: React.FC<Props> = () => {
   const handleRemovePair = (key: string) => {
     const updated = { ...attributes };
     delete updated[key];
-    helpers.setValue(updated);
+    setValue(updated);
   };
 
   const entries = Object.entries(attributes);
 
   return (
     <Stack>
-      <Text size="sm" fw={500}>{t`Login Attributes`}</Text>
-      <Text size="xs" c="dimmed">{t`Add key-value pairs to pass to the data warehouse for authentication`}</Text>
-      
+      <Text size="sm" fw={500}>
+        {t`Login Attributes`}
+      </Text>
+      <Text size="xs" c="dimmed">
+        {t`Add key-value pairs to pass to the data warehouse for authentication`}
+      </Text>
+
       {entries.length > 0 && (
         <Stack gap="xs">
           {entries.map(([key, value]) => (
@@ -94,11 +104,7 @@ const FormLoginAttributes: React.FC<Props> = () => {
         </Stack>
       )}
 
-      <Button
-        variant="light"
-        size="sm"
-        onClick={handleAddPair}
-      >
+      <Button variant="light" size="sm" onClick={handleAddPair}>
         {t`Add attribute`}
       </Button>
     </Stack>
